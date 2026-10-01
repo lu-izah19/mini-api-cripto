@@ -1,0 +1,13 @@
+yaml services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+      - ./chaves:/app/chaves
+      - softhsm-dados:/var/lib/softhsm/tokens
+
+volumes:
+  softhsm-dados:
