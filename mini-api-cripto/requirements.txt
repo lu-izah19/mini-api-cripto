@@ -1,7 +1,0 @@
-fastapi
-uvicorn[standard]
-pydantic
-cryptography
-python-pkcs11
-pytest
-httpx
