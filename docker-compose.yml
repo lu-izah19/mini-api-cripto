@@ -1,4 +1,4 @@
-yaml services:
+services:
   api:
     build: .
     ports:
