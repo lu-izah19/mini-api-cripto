@@ -1,6 +1,6 @@
 # 🔐 API de Criptografia
 
-API em **FastAPI** que expõe operações criptográficas básicas como endpoints REST: geração de chaves RSA, assinatura digital, verificação de assinatura e (em breve) cifragem simétrica com AES. Roda em **Docker** com hot-reload.
+API em **FastAPI** que expõe operações criptográficas como endpoints REST: geração de chaves RSA, assinatura e verificação digital, geração de chaves AES-256 e cifragem/decifragem autenticada com AES-GCM. Cada chave tem um **nome**, então várias chaves convivem sem uma sobrescrever a outra. Roda em **Docker** com hot-reload.
 
 Projeto de estudo desenvolvido durante o estágio de back-end na CERMOB Tecnologia.
 
@@ -15,7 +15,7 @@ Projeto de estudo desenvolvido durante o estágio de back-end na CERMOB Tecnolog
 | Criptografia | [`cryptography`](https://cryptography.io/) |
 | Validação | Pydantic |
 | Container | Docker + Docker Compose |
-| Testes | pytest + `TestClient` (planejado) |
+| Testes | pytest + `TestClient` (em andamento) |
 
 ---
 
@@ -26,7 +26,8 @@ Projeto de estudo desenvolvido durante o estágio de back-end na CERMOB Tecnolog
 ├── src/
 │   ├── main.py        # instancia o FastAPI e inclui o router
 │   ├── router.py      # rotas /chaves/*
-│   └── schemas.py     # modelos Pydantic de request/response
+│   └── schemas.py     # modelos Pydantic de request
+├── chaves/            # chaves geradas (criada automaticamente, NÃO versionada)
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
@@ -34,7 +35,7 @@ Projeto de estudo desenvolvido durante o estágio de back-end na CERMOB Tecnolog
 └── README.md
 ```
 
-> As chaves geradas (`privada.pem` e `publica.pem`) ficam no disco e **não são versionadas** — `*.pem` está no `.gitignore`.
+> 🔒 As chaves ficam na pasta `chaves/`, separadas do código. A pasta é criada automaticamente quando a API sobe e está no `.gitignore`, junto com `*.pem` e `*.key`. **Chave privada nunca vai pro repositório.**
 
 ---
 
@@ -59,30 +60,48 @@ O Uvicorn observa a pasta `/app`, então qualquer alteração no código recarre
 
 ---
 
+## 🏷️ Nome das chaves
+
+Toda rota recebe um campo `nome`, que identifica qual chave usar. Ele vira parte do nome do arquivo:
+
+| Tipo | Arquivos gerados |
+|---|---|
+| RSA | `chaves/{nome}_privada.pem` e `chaves/{nome}_publica.pem` |
+| AES | `chaves/{nome}_aes.key` |
+
+O `nome` é validado por **allowlist**: só aceita letras, números, hífen e sublinhado (`^[a-zA-Z0-9_-]+$`). Qualquer outra coisa (`../`, barra, espaço, nome vazio) é recusada com **422** antes de chegar na rota. Isso impede **path traversal**, ou seja, ler ou sobrescrever arquivos fora da pasta `chaves/`.
+
+---
+
 ## 📡 Endpoints
 
 Todas as rotas ficam sob o prefixo `/chaves`.
 
-### `POST /chaves/rsa` ✅
+### RSA: assinatura digital
 
-Gera um par de chaves RSA e salva os dois arquivos em formato **PEM**.
+#### `POST /chaves/rsa`
+
+Gera um par de chaves RSA-2048 e salva os dois arquivos em formato **PEM**.
+
+**Request**
+```json
+{ "nome": "lu" }
+```
 
 **Resposta**
 ```json
 { "message": "Par de chaves RSA gerado com sucesso" }
 ```
 
-Arquivos criados: `privada.pem` e `publica.pem`.
-
 ---
 
-### `POST /chaves/assinar` ✅
+#### `POST /chaves/assinar`
 
-Assina um texto com a chave privada usando **RSA-PSS + SHA-256**. A assinatura volta codificada em **base64** (porque JSON não carrega bytes).
+Assina um texto com a chave privada usando **RSA-PSS + SHA-256**. A assinatura volta em **base64** (porque JSON não carrega bytes).
 
 **Request**
 ```json
-{ "texto": "contrato do estagio" }
+{ "nome": "lu", "texto": "contrato do estagio" }
 ```
 
 **Resposta**
@@ -90,66 +109,144 @@ Assina um texto com a chave privada usando **RSA-PSS + SHA-256**. A assinatura v
 { "assinatura": "kj3h2K...==" }
 ```
 
+**Erros:** `404` se a chave privada não existir.
+
 ---
 
-### `POST /chaves/verificar` 🚧
+#### `POST /chaves/verificar`
 
 Confere se uma assinatura é válida para um texto, usando a chave pública.
 
 **Request**
 ```json
 {
-  "texto": "contrato do estagio",
-  "assinatura": "kj3h2K...=="
+  "nome": "lu",
+  "texto_assinado": "contrato do estagio",
+  "assinatura_b64": "kj3h2K...=="
 }
 ```
 
-**Resposta (planejada)**
+**Resposta**
 ```json
 { "valida": true }
 ```
 
-Internamente: decodifica a assinatura de base64 e chama `verify()`. Como `verify()` não retorna `True` — ele **lança `InvalidSignature`** quando falha — o resultado é tratado com `try/except`.
+Se o texto ou a assinatura tiverem sido alterados, volta `{ "valida": false }`.
+
+Internamente: o `verify()` não retorna `True`. Quando falha, ele **lança `InvalidSignature`**, que é capturado com `try/except`.
+
+**Erros:** `404` se a chave pública não existir.
 
 ---
 
-### Próximos endpoints 📝
+### AES-256-GCM: cifragem simétrica
 
-| Endpoint | O que faz |
+#### `POST /chaves/aes`
+
+Gera uma chave AES-256 (32 bytes aleatórios com `os.urandom`).
+
+**Request**
+```json
+{ "nome": "lu" }
+```
+
+**Resposta**
+```json
+{ "message": "Chave AES gerada com sucesso" }
+```
+
+---
+
+#### `POST /chaves/cifrar`
+
+Cifra um texto com **AES-GCM**. Um **nonce** de 12 bytes é gerado aleatoriamente a cada chamada, então o mesmo texto cifrado duas vezes gera resultados diferentes.
+
+**Request**
+```json
+{ "nome": "lu", "texto": "oi lu" }
+```
+
+**Resposta**
+```json
+{ "cifrado": "Xk9a...==", "nonce": "a1B2c3...==" }
+```
+
+> ⚠️ Guarde o `nonce`: sem ele não dá pra decifrar.
+
+**Erros:** `404` se a chave AES não existir.
+
+---
+
+#### `POST /chaves/decifrar`
+
+Decifra o texto usando a chave e o nonce.
+
+**Request**
+```json
+{
+  "nome": "lu",
+  "texto_cifrado": "Xk9a...==",
+  "nonce": "a1B2c3...=="
+}
+```
+
+**Resposta**
+```json
+{ "texto": "oi lu" }
+```
+
+**Erros:**
+- `404` se a chave AES não existir
+- `400` se o texto cifrado ou o nonce tiverem sido adulterados (o GCM detecta e lança `InvalidTag`)
+
+---
+
+## 🚦 Códigos de resposta
+
+| Código | Quando acontece |
 |---|---|
-| `POST /chaves/aes` | Gera uma chave AES-256 (32 bytes) com gerador seguro (`os.urandom` / `secrets`) |
-| `POST /chaves/cifrar` | Cifra um texto com AES; IV/nonce aleatório a cada chamada |
-| `POST /chaves/decifrar` | Decifra o texto; deve **falhar** com IV/nonce ou dados adulterados |
-
-> 💡 O modo escolhido para o AES importa: **AES-GCM** autentica os dados e detecta adulteração; AES-CBC com IV errado só devolve lixo sem avisar.
+| `200` | Deu certo |
+| `400` | Dados cifrados adulterados ou nonce errado |
+| `404` | Chave com esse nome não existe |
+| `422` | Request inválido (ex.: `nome` fora da allowlist) |
 
 ---
 
 ## 🧠 Conceitos aplicados
 
 - **Assinatura digital:** a chave privada assina, a pública verifica. Garante autenticidade e integridade, não sigilo.
-- **PEM:** formato texto para guardar chaves em arquivo (`private_bytes` / `public_bytes` para salvar, `load_pem_private_key` / `load_pem_public_key` para carregar).
-- **PSS:** esquema de padding probabilístico para assinaturas RSA, mais seguro que o PKCS#1 v1.5.
+- **Criptografia simétrica:** no AES, a mesma chave cifra e decifra.
+- **AES-GCM:** além de cifrar, autentica os dados. Qualquer alteração no cifrado ou no nonce faz a decifragem falhar, em vez de devolver lixo silenciosamente (como aconteceria no AES-CBC).
+- **Nonce:** valor aleatório usado uma única vez por cifragem. Nunca deve se repetir com a mesma chave.
+- **Tamanho de chave:** AES-256 tem 256 bits de segurança; RSA-2048 equivale a cerca de 112, porque RSA pode ser atacado por fatoração em vez de força bruta.
+- **PEM:** formato texto para guardar chaves RSA em arquivo.
+- **PSS:** padding probabilístico para assinaturas RSA, mais seguro que o PKCS#1 v1.5.
 - **Base64:** transporte de bytes dentro de JSON sem perda.
+- **Allowlist:** validar aceitando só o que é conhecido, em vez de tentar bloquear tudo que é perigoso.
 
 ---
 
 ## ✅ Status
 
 - [x] Estrutura FastAPI + Docker Compose com hot-reload
-- [x] `/chaves/rsa`
-- [x] `/chaves/assinar`
-- [ ] `/chaves/verificar` (falta o `verify()` com tratamento de `InvalidSignature`)
-- [ ] `/chaves/aes`
-- [ ] `/chaves/cifrar`
-- [ ] `/chaves/decifrar`
+- [x] `/chaves/rsa`, `/chaves/assinar`, `/chaves/verificar`
+- [x] `/chaves/aes`, `/chaves/cifrar`, `/chaves/decifrar`
+- [x] Chaves nomeadas, sem sobrescrita entre nomes diferentes
+- [x] Validação do `nome` por allowlist (proteção contra path traversal)
+- [x] Chaves isoladas na pasta `chaves/`
+- [x] Tratamento de erros: `404`, `400`, `422`
 - [ ] Suíte de testes com pytest
+
+### Limitações conhecidas
+
+- Chamar `/rsa` ou `/aes` com um nome que **já existe** sobrescreve a chave anterior.
+- Base64 malformado no `/verificar` ou no `/decifrar` ainda retorna `500`.
 
 ---
 
 ## ⚠️ Aviso
 
-Projeto **educacional**. Em produção, chaves privadas não ficam em arquivo solto no disco — ficam em um KMS, Vault ou HSM.
+Projeto **educacional**. Em produção, chaves privadas não ficam em arquivo no disco: ficam em um KMS, Vault ou HSM.
 
 ---
 
