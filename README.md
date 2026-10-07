@@ -1,6 +1,6 @@
 # 🔐 API de Criptografia
 
-API em **FastAPI** que expõe operações criptográficas como endpoints REST: geração de chaves RSA, assinatura e verificação digital, geração de chaves AES-256 e cifragem/decifragem autenticada com AES-GCM. Cada chave tem um **nome**, então várias chaves convivem sem uma sobrescrever a outra. Roda em **Docker** com hot-reload.
+API em **FastAPI** que expõe operações criptográficas como endpoints REST: geração de chaves RSA, assinatura e verificação digital, geração de chaves AES-256 e cifragem/decifragem autenticada com AES-GCM. Cada chave tem um **nome**, então várias chaves convivem sem uma sobrescrever a outra. Roda em **Docker** com hot-reload e tem uma suíte de testes com **pytest**.
 
 Projeto de estudo desenvolvido durante o estágio de back-end na CERMOB Tecnologia.
 
@@ -15,7 +15,7 @@ Projeto de estudo desenvolvido durante o estágio de back-end na CERMOB Tecnolog
 | Criptografia | [`cryptography`](https://cryptography.io/) |
 | Validação | Pydantic |
 | Container | Docker + Docker Compose |
-| Testes | pytest + `TestClient` (em andamento) |
+| Testes | pytest + `TestClient` + httpx |
 
 ---
 
@@ -24,18 +24,19 @@ Projeto de estudo desenvolvido durante o estágio de back-end na CERMOB Tecnolog
 ```
 .
 ├── src/
-│   ├── main.py        # instancia o FastAPI e inclui o router
-│   ├── router.py      # rotas /chaves/*
-│   └── schemas.py     # modelos Pydantic de request
-├── chaves/            # chaves geradas (criada automaticamente, NÃO versionada)
+│   ├── main.py          # instancia o FastAPI e inclui o router
+│   ├── router.py        # rotas da API
+│   └── schemas.py       # modelos Pydantic de request
+├── tests/
+│   └── test_router.py   # testes dos endpoints com pytest
+├── chaves/              # chaves geradas (criada automaticamente, NÃO vai pro repositório)
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
-├── .gitignore
 └── README.md
 ```
 
-> 🔒 As chaves ficam na pasta `chaves/`, separadas do código. A pasta é criada automaticamente quando a API sobe e está no `.gitignore`, junto com `*.pem` e `*.key`. **Chave privada nunca vai pro repositório.**
+> 🔒 As chaves ficam na pasta `chaves/`, separadas do código. A pasta é criada automaticamente quando a API sobe. **Chave privada nunca vai pro repositório:** ao subir o projeto, a pasta `chaves/` e qualquer arquivo `.pem` ou `.key` ficam de fora.
 
 ---
 
@@ -75,11 +76,9 @@ O `nome` é validado por **allowlist**: só aceita letras, números, hífen e su
 
 ## 📡 Endpoints
 
-Todas as rotas ficam sob o prefixo `/chaves`.
-
 ### RSA: assinatura digital
 
-#### `POST /chaves/rsa`
+#### `POST /rsa`
 
 Gera um par de chaves RSA-2048 e salva os dois arquivos em formato **PEM**.
 
@@ -95,7 +94,7 @@ Gera um par de chaves RSA-2048 e salva os dois arquivos em formato **PEM**.
 
 ---
 
-#### `POST /chaves/assinar`
+#### `POST /assinar`
 
 Assina um texto com a chave privada usando **RSA-PSS + SHA-256**. A assinatura volta em **base64** (porque JSON não carrega bytes).
 
@@ -113,7 +112,7 @@ Assina um texto com a chave privada usando **RSA-PSS + SHA-256**. A assinatura v
 
 ---
 
-#### `POST /chaves/verificar`
+#### `POST /verificar`
 
 Confere se uma assinatura é válida para um texto, usando a chave pública.
 
@@ -141,7 +140,7 @@ Internamente: o `verify()` não retorna `True`. Quando falha, ele **lança `Inva
 
 ### AES-256-GCM: cifragem simétrica
 
-#### `POST /chaves/aes`
+#### `POST /aes`
 
 Gera uma chave AES-256 (32 bytes aleatórios com `os.urandom`).
 
@@ -157,7 +156,7 @@ Gera uma chave AES-256 (32 bytes aleatórios com `os.urandom`).
 
 ---
 
-#### `POST /chaves/cifrar`
+#### `POST /cifrar`
 
 Cifra um texto com **AES-GCM**. Um **nonce** de 12 bytes é gerado aleatoriamente a cada chamada, então o mesmo texto cifrado duas vezes gera resultados diferentes.
 
@@ -172,12 +171,14 @@ Cifra um texto com **AES-GCM**. Um **nonce** de 12 bytes é gerado aleatoriament
 ```
 
 > ⚠️ Guarde o `nonce`: sem ele não dá pra decifrar.
+>
+> ⚠️ Repare que o campo **sai** do `/cifrar` como `cifrado`, mas **entra** no `/decifrar` como `texto_cifrado`.
 
 **Erros:** `404` se a chave AES não existir.
 
 ---
 
-#### `POST /chaves/decifrar`
+#### `POST /decifrar`
 
 Decifra o texto usando a chave e o nonce.
 
@@ -212,30 +213,73 @@ Decifra o texto usando a chave e o nonce.
 
 ---
 
+## 🧪 Testes
+
+Os testes ficam em `tests/test_router.py` e usam o `TestClient` do FastAPI, que faz requisições à API sem precisar subir servidor.
+
+### Como rodar
+
+Com o container de pé:
+
+```bash
+docker compose exec api pytest
+```
+
+> `api` é o nome do serviço no `docker-compose.yml`.
+
+Dependências necessárias no `requirements.txt`: `pytest` e `httpx` (o `TestClient` usa o `httpx` por baixo).
+
+### O que é testado
+
+| Teste | O que prova |
+|---|---|
+| `test_gerar_par_de_chaves_cria_os_dois_arquivos` | `/rsa` cria a chave privada e a pública no disco |
+| `test_assinar_verificar_mesmo_texto_devolve_verdadeiro` | Uma assinatura válida é aceita pelo `/verificar` |
+| `test_texto_alterado_em_uma_letra_reprova_verificacao` | Mudar **uma letra** do texto faz a verificação falhar |
+| `test_cifrar_decifrar_devolve_texto_original` | Cifrar e decifrar devolve exatamente o texto original |
+| `test_cifrar_mesmo_texto_duas_vezes_da_resultados_DIFERENTES` | Com a **mesma chave**, o mesmo texto gera cifrados diferentes (nonce aleatório) |
+| `test_decifrar_com_iv_errado_falha` | Decifrar com o nonce de **outra** cifragem é barrado com `400` |
+
+### Padrões usados
+
+- **Chamadas encadeadas:** a resposta de uma rota alimenta a próxima (ex.: a assinatura do `/assinar` vai pro `/verificar`).
+- **Ler a resposta:** `resposta.json()["campo"]` transforma o corpo em dicionário e pega o campo.
+- **Conferir erro:** `resposta.status_code == 400` confere o código HTTP direto, sem `.json()`.
+- **Nonce errado de verdade:** em vez de inventar um texto qualquer (que nem seria base64 válido), o teste usa o nonce de uma segunda cifragem. Assim ele é válido, mas pertence à mensagem errada, e o teste prova que o GCM detecta isso.
+
+---
+
 ## 🧠 Conceitos aplicados
 
 - **Assinatura digital:** a chave privada assina, a pública verifica. Garante autenticidade e integridade, não sigilo.
 - **Criptografia simétrica:** no AES, a mesma chave cifra e decifra.
 - **AES-GCM:** além de cifrar, autentica os dados. Qualquer alteração no cifrado ou no nonce faz a decifragem falhar, em vez de devolver lixo silenciosamente (como aconteceria no AES-CBC).
-- **Nonce:** valor aleatório usado uma única vez por cifragem. Nunca deve se repetir com a mesma chave.
+- **Nonce / IV:** valor aleatório usado uma única vez por cifragem. No GCM costuma se chamar nonce; no CBC, IV (vetor de inicialização). Nunca deve se repetir com a mesma chave.
 - **Tamanho de chave:** AES-256 tem 256 bits de segurança; RSA-2048 equivale a cerca de 112, porque RSA pode ser atacado por fatoração em vez de força bruta.
 - **PEM:** formato texto para guardar chaves RSA em arquivo.
 - **PSS:** padding probabilístico para assinaturas RSA, mais seguro que o PKCS#1 v1.5.
 - **Base64:** transporte de bytes dentro de JSON sem perda.
 - **Allowlist:** validar aceitando só o que é conhecido, em vez de tentar bloquear tudo que é perigoso.
+- **400 vs 500:** `400` é erro tratado (o cliente mandou dado ruim e a API sabia o que fazer); `500` é erro não tratado (a API quebrou).
 
 ---
 
 ## ✅ Status
 
 - [x] Estrutura FastAPI + Docker Compose com hot-reload
-- [x] `/chaves/rsa`, `/chaves/assinar`, `/chaves/verificar`
-- [x] `/chaves/aes`, `/chaves/cifrar`, `/chaves/decifrar`
+- [x] `/rsa`, `/assinar`, `/verificar`
+- [x] `/aes`, `/cifrar`, `/decifrar`
 - [x] Chaves nomeadas, sem sobrescrita entre nomes diferentes
 - [x] Validação do `nome` por allowlist (proteção contra path traversal)
 - [x] Chaves isoladas na pasta `chaves/`
 - [x] Tratamento de erros: `404`, `400`, `422`
-- [ ] Suíte de testes com pytest
+- [x] Suíte de testes com pytest escrita (6 testes)
+- [ ] Rodar a suíte e deixar tudo verde
+
+### Pendências
+
+- **Import do `src`:** o `main.py` importa `from router import ...`, mas o `router.py` importa `from src.schemas import ...`. Essa mistura faz o pytest falhar com `ModuleNotFoundError: No module named 'src'`. Correção prevista: padronizar para `from schemas import ...`.
+- **Testes dependentes:** os testes de assinatura usam a chave `teste01`, criada pelo teste de geração. Se rodarem sozinhos, quebram. Ideal: cada teste gerar a própria chave no início.
 
 ### Limitações conhecidas
 
