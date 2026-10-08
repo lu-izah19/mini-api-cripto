@@ -1,14 +1,20 @@
+from inspect import Attribute
+
 from cryptography.exceptions import InvalidSignature, InvalidTag
-from fastapi import APIRouter, Depends, HTTPException
-from src.schemas import AssinarRequest, GerarChaveRequest, VerificarRequest, CifrarRequest, DecifrarRequest
+from fastapi import APIRouter, HTTPException
+from schemas import AssinarRequest, GerarChaveRequest, VerificarRequest, CifrarRequest, DecifrarRequest
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import hashes, serialization
 import base64
 import os
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from hsm import sessao_hsm, gerar_par_no_cofre, assinar_no_cofre, verificar_no_cofre
+from pkcs11 import Attribute, ObjectClass
 
 router = APIRouter(prefix="/chaves", tags=["chaves"])
 os.makedirs("chaves", exist_ok=True)
+
+# _______________Parte 1_____________________________
 
 @router.post("/rsa")
 def gerar_par_de_chaves(dados: GerarChaveRequest):
@@ -35,7 +41,9 @@ def assinar(dados: AssinarRequest):
         assinatura_b64 = base64.b64encode(assinatura).decode("utf-8")
         return {"assinatura": assinatura_b64}
     except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Chave privada não encontrada. Gere o par de chaves primeiro.")
+        raise HTTPException(
+            status_code=404, detail="Chave privada não encontrada. Gere o par de chaves primeiro."
+        )
 
 @router.post("/verificar")
 def verificar(dados: VerificarRequest):
@@ -87,5 +95,22 @@ def decifrar(dados: DecifrarRequest):
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Chave AES não encontrada. Gere a chave primeiro.")
     except InvalidTag:
-        raise HTTPException(status_code=400, detail="Falha na decifragem. Verifique o texto cifrado e o nonce.")
- 
+        raise HTTPException(
+            status_code=400, detail="Falha na decifragem. Verifique o texto cifrado e o nonce."
+        )
+
+# _______________Parte 2_____________________________
+
+@router.get("/cofre/status")
+def status_cofre():
+    with sessao_hsm() as sessao:
+        sessao_atual = sessao.token.label
+        return {"token": sessao_atual}
+
+@router.get("/cofre/chaves")
+def listar_chaves_cofre(): 
+    with sessao_hsm() as sessao:
+        lista_de_chaves = []
+        for chave in sessao.get_objects({Attribute.CLASS: ObjectClass.PRIVATE_KEY}):
+            lista_de_chaves.append({"label": chave.label, "tipo": chave.key_type.name})
+        return lista_de_chaves
