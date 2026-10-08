@@ -4,6 +4,8 @@ import os
 
 client = TestClient(app)
 
+# _______________Testes parte 1_____________________________
+
 def test_gerar_par_de_chaves_cria_os_dois_arquivos():
     client.post("chaves/rsa", json={"nome": "teste01"})
     assert os.path.exists("chaves/teste01_privada.pem")
