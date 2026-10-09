@@ -114,3 +114,41 @@ def listar_chaves_cofre():
         for chave in sessao.get_objects({Attribute.CLASS: ObjectClass.PRIVATE_KEY}):
             lista_de_chaves.append({"label": chave.label, "tipo": chave.key_type.name})
         return lista_de_chaves
+
+@router.post("/cofre/rsa")
+def gerar_par_RSA_no_cofre(dados: GerarChaveRequest):
+    chave_cofre = gerar_par_no_cofre(dados.nome)
+    chave_publica = base64.b64encode(chave_cofre).decode("utf-8")  
+    return {"chave_publica": chave_publica}
+
+@router.post("/cofre/assinar")
+def assinar_chave_no_cofre(dados: AssinarRequest):
+    texto_cofre_assinada = assinar_no_cofre(dados.nome, dados.texto)
+    texto_assinado_b64 = base64.b64encode(texto_cofre_assinada).decode("utf-8")
+    return {"texto_assinado": texto_assinado_b64}
+
+@router.post("/cofre/verificar")
+def verificar_assinatura_no_cofre(dados: VerificarRequest):
+        cofre_verificado = verificar_no_cofre(dados.nome, dados.texto_assinado, base64.b64decode(dados.assinatura_b64))
+        return {"valida": cofre_verificado}     
+
+@router.post("/cofre/aes")
+def gerar_chave_AES_no_cofre(dados: GerarChaveRequest):
+    gerar_aes_no_cofre(dados.nome)
+    return {"message": "Chave AES gerada com sucesso"}
+
+@router.post("/cofre/cifrar")
+def cifrar_no_cofre(dados: CifrarRequest):
+    texto_cifrado_cofre = cifrar_aes_no_cofre(dados.nome, dados.texto)
+    cifrado_cofre, nonce_cofre = texto_cifrado_cofre
+    cifrado_cofre = base64.b64encode(cifrado_cofre).decode("utf-8")
+    nonce_cofre = base64.b64encode(nonce_cofre).decode("utf-8")
+    return {"cifrado": cifrado_cofre, "nonce": nonce_cofre}
+
+
+@router.post("/cofre/decifrar")
+def decifrar_no_cofre(dados: DecifrarRequest):
+    texto_decifrado_cofre = decifrar_aes_no_cofre(
+        dados.nome, base64.b64decode(dados.texto_cifrado), base64.b64decode(dados.nonce)
+    )
+    return {"texto": texto_decifrado_cofre}
