@@ -33,7 +33,7 @@ Projeto de estudo desenvolvido durante o estágio de back-end na CERMOB Tecnolog
 │   └── hsm.py           # funções que conversam com o cofre (PKCS#11)
 ├── tests/
 │   ├── test_router.py   # testes das rotas da Parte 1
-│   └── test_cripto.py   # testes do cofre (Parte 2, a escrever)
+│   └── test_cripto.py   # testes do cofre (Parte 2)
 ├── chaves/              # chaves geradas na Parte 1 (criada automaticamente, NÃO vai pro repositório)
 ├── .gitignore
 ├── Dockerfile
@@ -71,12 +71,12 @@ Para conferir se está de pé: `docker compose ps` (o container deve aparecer co
 
 ## 🏷️ Nome das chaves
 
-Toda rota da Parte 1 recebe um campo `nome`, que identifica qual chave usar. Ele vira parte do nome do arquivo:
+Toda rota recebe um campo `nome`, que identifica qual chave usar. Na Parte 1 ele vira parte do nome do arquivo; na Parte 2 vira o **label** da chave dentro do cofre.
 
-| Tipo | Arquivos gerados |
-|---|---|
-| RSA | `chaves/{nome}_privada.pem` e `chaves/{nome}_publica.pem` |
-| AES | `chaves/{nome}_aes.key` |
+| Tipo | Parte 1 (arquivos) | Parte 2 (cofre) |
+|---|---|---|
+| RSA | `chaves/{nome}_privada.pem` e `chaves/{nome}_publica.pem` | par RSA com label `{nome}` |
+| AES | `chaves/{nome}_aes.key` | chave secreta com label `{nome}` |
 
 O `nome` é validado por **allowlist**: só aceita letras, números, hífen e sublinhado (`^[a-zA-Z0-9_-]+$`). Qualquer outra coisa (`../`, barra, espaço, nome vazio) é recusada com **422** antes de chegar na rota. Isso impede **path traversal**, ou seja, ler ou sobrescrever arquivos fora da pasta `chaves/`.
 
@@ -142,7 +142,7 @@ Confere se uma assinatura é válida para um texto, usando a chave pública.
 
 Se o texto ou a assinatura tiverem sido alterados, volta `{ "valida": false }`.
 
-Internamente: o `verify()` não retorna `True`. Quando falha, ele **lança `InvalidSignature`**, que é capturado com `try/except`.
+Internamente: o `verify()` da `cryptography` não retorna `True`. Quando falha, ele **lança `InvalidSignature`**, que é capturado com `try/except`.
 
 **Erros:** `404` se a chave pública não existir.
 
@@ -238,7 +238,11 @@ Na Parte 1, a chave mora num arquivo e o **Python** faz a conta. Na Parte 2, a c
 | Onde a chave mora | arquivo `.pem` / `.key` | dentro do cofre |
 | Quem faz a conta | Python | cofre |
 | Quem gera o nonce/IV | a API (`os.urandom(12)`) | a API (`os.urandom(12)`) |
+| Assinatura RSA | RSA-PSS + SHA-256 | `SHA256_RSA_PKCS` (PKCS#1 v1.5) |
 | Mecanismo AES | AES-GCM | AES-GCM |
+| Assinatura inválida | `verify()` **lança** `InvalidSignature` | `verify()` **devolve** `False` |
+
+> Como o padding da assinatura é diferente nas duas partes, uma assinatura feita no `/chaves/assinar` não é verificável no `/chaves/cofre/verificar`, e vice-versa.
 
 ### Vocabulário PKCS#11
 
@@ -254,16 +258,26 @@ Na Parte 1, a chave mora num arquivo e o **Python** faz a conta. Na Parte 2, a c
 | `sessao_hsm()` | Context manager: carrega a biblioteca, acha o token pelo label, abre a sessão com o PIN e garante o fechamento com `try/finally` |
 | `gerar_par_no_cofre(label)` | Gera um par RSA-2048 dentro do cofre e devolve só o módulo da chave **pública** |
 | `assinar_no_cofre(label, texto)` | Pede ao cofre para assinar com `SHA256_RSA_PKCS` |
-| `verificar_no_cofre(label, texto, assinatura)` | Pede ao cofre para verificar a assinatura |
+| `verificar_no_cofre(label, texto, assinatura)` | Pede ao cofre para verificar a assinatura e devolve `True`/`False` |
 | `gerar_aes_no_cofre(label)` | Gera uma chave AES-256 dentro do cofre. Não devolve nada: a chave não sai |
-| `cifrar_aes_no_cofre(label, texto)` | Gera o nonce, pede ao cofre para cifrar com `AES_GCM` e devolve `(cifrado, nonce)` |
-| `decifrar_aes_no_cofre(label, cifrado, nonce)` | Pede ao cofre para decifrar com o nonce recebido e devolve o texto |
+| `cifrar_aes_no_cofre(label, texto)` | Gera o nonce, pede ao cofre para cifrar com `AES_GCM` e devolve a tupla `(cifrado, nonce)` |
+| `decifrar_aes_no_cofre(label, cifrado, nonce)` | Pede ao cofre para decifrar com o nonce recebido e devolve o texto já decodificado (`str`) |
+
+**Atributos da chave RSA privada:** `TOKEN`, `PRIVATE`, `SENSITIVE: True`, `EXTRACTABLE: False`, `SIGN`.
 
 **Atributos da chave AES:** `TOKEN`, `PRIVATE`, `SENSITIVE: True`, `EXTRACTABLE: False` (nunca sai do cofre), `ENCRYPT` e `DECRYPT` (só pode cifrar e decifrar, nada além: **princípio do menor privilégio**).
 
 **Parâmetros do GCM no cofre:** `mechanism_param=(nonce, b"", 128)`, ou seja, o IV de 12 bytes, dados adicionais autenticados vazios e tag de **128 bits** (16 bytes).
 
-### Endpoints do cofre
+### O papel das rotas
+
+As rotas do cofre são **finas**: chamam a função do `hsm.py`, convertem bytes para base64 (ou o contrário) e devolvem um dicionário. Toda a criptografia acontece dentro do cofre. Nada de `rsa.generate_private_key`, `AESGCM` ou arquivo `.pem` aqui.
+
+---
+
+## 📡 Endpoints: Parte 2 (cofre)
+
+Também sob o prefixo `/chaves`.
 
 #### `GET /chaves/cofre/status`
 
@@ -291,14 +305,129 @@ Lista as chaves que estão dentro do cofre, com label e tipo. Percorre os objeto
 
 ---
 
+### RSA no cofre
+
+#### `POST /chaves/cofre/rsa`
+
+Gera um par RSA-2048 **dentro do cofre**. A privada fica lá; a resposta traz só o **módulo da chave pública** em base64.
+
+**Request**
+```json
+{ "nome": "lu" }
+```
+
+**Resposta**
+```json
+{ "chave_publica": "u7Hq...==" }
+```
+
+---
+
+#### `POST /chaves/cofre/assinar`
+
+Pede ao cofre para assinar o texto com a privada guardada lá.
+
+**Request**
+```json
+{ "nome": "lu", "texto": "contrato do estagio" }
+```
+
+**Resposta**
+```json
+{ "texto_assinado": "kj3h2K...==" }
+```
+
+> ⚠️ O valor de `texto_assinado` é a **assinatura** em base64. É ele que vai no campo `assinatura_b64` do `/cofre/verificar`.
+
+---
+
+#### `POST /chaves/cofre/verificar`
+
+Pede ao cofre para verificar a assinatura com a pública.
+
+**Request**
+```json
+{
+  "nome": "lu",
+  "texto_assinado": "contrato do estagio",
+  "assinatura_b64": "kj3h2K...=="
+}
+```
+
+**Resposta**
+```json
+{ "valida": true }
+```
+
+Diferente da Parte 1, aqui não tem `try/except`: o `python-pkcs11` **devolve** `True` ou `False` em vez de lançar exceção. Assinatura que não bate **não é erro**: a API entendeu o pedido e respondeu, então volta `200` com `{ "valida": false }`.
+
+---
+
+### AES no cofre
+
+#### `POST /chaves/cofre/aes`
+
+Gera uma chave AES-256 dentro do cofre. Como a chave é `SENSITIVE` e não `EXTRACTABLE`, a resposta é só uma confirmação.
+
+**Request**
+```json
+{ "nome": "lu" }
+```
+
+**Resposta**
+```json
+{ "message": "Chave AES gerada com sucesso" }
+```
+
+---
+
+#### `POST /chaves/cofre/cifrar`
+
+Cifra o texto dentro do cofre com AES-GCM. A função do `hsm.py` devolve uma **tupla** `(cifrado, nonce)`, que a rota desempacota em duas variáveis e converte para base64.
+
+**Request**
+```json
+{ "nome": "lu", "texto": "oi lu" }
+```
+
+**Resposta**
+```json
+{ "cifrado": "Xk9a...==", "nonce": "a1B2c3...==" }
+```
+
+> ⚠️ Igual à Parte 1: sai como `cifrado`, entra no `/cofre/decifrar` como `texto_cifrado`.
+
+---
+
+#### `POST /chaves/cofre/decifrar`
+
+Decifra dentro do cofre. A rota só converte o base64 de volta para bytes; o texto já volta decodificado do `hsm.py`.
+
+**Request**
+```json
+{
+  "nome": "lu",
+  "texto_cifrado": "Xk9a...==",
+  "nonce": "a1B2c3...=="
+}
+```
+
+**Resposta**
+```json
+{ "texto": "oi lu" }
+```
+
+---
+
 ## 🚦 Códigos de resposta
 
 | Código | Quando acontece |
 |---|---|
-| `200` | Deu certo |
-| `400` | Dados cifrados adulterados ou nonce errado |
-| `404` | Chave com esse nome não existe |
+| `200` | Deu certo (inclusive `{ "valida": false }`: assinatura que não bate é resposta, não erro) |
+| `400` | Dados cifrados adulterados ou nonce errado (Parte 1) |
+| `404` | Chave com esse nome não existe (Parte 1) |
 | `422` | Request inválido (ex.: `nome` fora da allowlist) |
+| `500` | Erros ainda não tratados nas rotas do cofre (ver Limitações) |
 
 ---
 
@@ -318,7 +447,9 @@ docker compose exec api pytest
 
 Dependências necessárias no `requirements.txt`: `pytest` e `httpx` (o `TestClient` usa o `httpx` por baixo).
 
-### O que é testado (`test_router.py`)
+> O pytest só reconhece funções que **começam com `test_`**.
+
+### Parte 1: `test_router.py`
 
 | Teste | O que prova |
 |---|---|
@@ -329,13 +460,32 @@ Dependências necessárias no `requirements.txt`: `pytest` e `httpx` (o `TestCli
 | `test_cifrar_mesmo_texto_duas_vezes_da_resultados_DIFERENTES` | Com a **mesma chave**, o mesmo texto gera cifrados diferentes (nonce aleatório) |
 | `test_decifrar_com_iv_errado_falha` | Decifrar com o nonce de **outra** cifragem é barrado com `400` |
 
+### Parte 2: `test_cripto.py`
+
+| Teste | O que prova |
+|---|---|
+| `test_cofre_status_responde_com_label_do_token` | A API conversa com o cofre e lê o label `cofre-treino` |
+| `test_gerar_chave_no_cofre_devolve_parte_pública` | `/cofre/rsa` responde `200` com uma `chave_publica` não vazia |
+| `test_chave_privada_NÃO_pode_ser_lida_nem_exportada` | A privada está marcada `SENSITIVE` e não `EXTRACTABLE`, e tentar ler o `PRIVATE_EXPONENT` estoura `AttributeSensitive` |
+| `test_assinar_verificar_pelo_cofre_funciona` | Assinar e verificar o mesmo texto no cofre devolve `valida: true` |
+| `test_texto_alterado_reprova_verificação` | Verificar com outro texto devolve `200` e `valida: false` |
+| `test_cifrar_decifrar_pelo_cofre_devolve_original` | Gerar AES → cifrar → decifrar devolve exatamente o texto original |
+| `test_listar_chaves_devolve_as_que_foram_criadas` | Uma chave RSA recém-criada aparece no `/cofre/chaves` |
+
 ### Padrões usados
 
 - **Chamadas encadeadas:** a resposta de uma rota alimenta a próxima (ex.: a assinatura do `/assinar` vai pro `/verificar`).
+- **Cada teste cria a própria chave:** nunca depende de uma chave que outro teste (ou o Swagger) criou.
+- **Nome único com `uuid`:** no cofre, a chave **não some** quando o teste acaba. Por isso cada teste usa `f"teste_cofre_{uuid.uuid4().hex}"`, e rodar o pytest várias vezes não gera labels duplicados.
+- **Texto numa variável:** `texto = "..."` usado no assinar e no verificar (ou no cifrar e no decifrar) garante que os dois passos falam da mesma coisa.
+- **Status antes do conteúdo:** o `assert` do `status_code` vem primeiro. Se a rota falhar, o erro fica claro ("esperava 200, veio 404") em vez de um `KeyError` confuso.
 - **Ler a resposta:** `resposta.json()["campo"]` transforma o corpo em dicionário e pega o campo.
-- **Conferir erro:** `resposta.status_code == 400` confere o código HTTP direto, sem `.json()`.
+- **Procurar numa lista de dicionários:** montar uma lista só com os labels (`for` + `.append(chave["label"])`) e aí usar `nome in lista`.
+- **Conferir erro de rota:** `resposta.status_code == 400` confere o código HTTP direto, sem `.json()`.
+- **Conferir que algo DÁ erro:** `with pytest.raises(AttributeSensitive):` só passa se o código de dentro estourar essa exceção.
+- **Falar direto com o cofre:** quando nenhuma rota faz o que o teste precisa (como tentar ler a privada), o teste abre `sessao_hsm()` sozinho. Tudo que usa a sessão fica **dentro** do `with`.
 - **Nonce errado de verdade:** em vez de inventar um texto qualquer (que nem seria base64 válido), o teste usa o nonce de uma segunda cifragem. Assim ele é válido, mas pertence à mensagem errada, e o teste prova que o GCM detecta isso.
-- **Depurar `KeyError`:** quando `resposta.json()["campo"]` dá `KeyError`, a rota devolveu erro em vez de sucesso. Um `print(resposta.status_code, resposta.json())` antes mostra o que veio.
+- **Depurar `KeyError`:** quando `resposta.json()["campo"]` dá `KeyError`, a rota devolveu erro em vez de sucesso, ou o nome do campo não bate com o `return` da rota. Um `print(resposta.status_code, resposta.json())` antes mostra o que veio.
 
 ---
 
@@ -352,9 +502,12 @@ Dependências necessárias no `requirements.txt`: `pytest` e `httpx` (o `TestCli
 - **Base64:** transporte de bytes dentro de JSON sem perda.
 - **Allowlist:** validar aceitando só o que é conhecido, em vez de tentar bloquear tudo que é perigoso.
 - **400 vs 500:** `400` é erro tratado (o cliente mandou dado ruim e a API sabia o que fazer); `500` é erro não tratado (a API quebrou).
+- **Resposta vs erro:** assinatura inválida é uma resposta legítima (`200` + `false`), não um erro do cliente.
 - **HSM / PKCS#11:** a chave fica num cofre e o código só pede operações. Chave marcada como `SENSITIVE` e não `EXTRACTABLE` não pode ser lida nem pelo próprio dono.
 - **Chave secreta (`SECRET_KEY`):** no PKCS#11, chave simétrica (AES) não é privada nem pública, é "secreta".
 - **Menor privilégio:** a chave só recebe as permissões de que precisa (`ENCRYPT`/`DECRYPT` para AES, `SIGN`/`VERIFY` para RSA).
+- **Tupla e desempacotamento:** uma função que faz `return a, b` devolve uma tupla, que pode ser recebida direto em duas variáveis: `x, y = funcao()`.
+- **Escopo local:** uma variável criada dentro de uma função só existe ali, então duas rotas podem usar o mesmo nome de variável sem conflito.
 
 ---
 
@@ -380,20 +533,27 @@ Dependências necessárias no `requirements.txt`: `pytest` e `httpx` (o `TestCli
 - [x] `hsm.py`: funções AES (`gerar_aes_no_cofre`, `cifrar_aes_no_cofre`, `decifrar_aes_no_cofre`)
 - [x] `GET /chaves/cofre/status`
 - [x] `GET /chaves/cofre/chaves` (só chaves RSA por enquanto)
-- [ ] Rotas que usam o cofre para RSA (gerar, assinar, verificar)
-- [ ] Rotas que usam o cofre para AES (gerar, cifrar, decifrar)
+- [x] Rotas que usam o cofre para RSA (`/cofre/rsa`, `/cofre/assinar`, `/cofre/verificar`)
+- [x] Rotas que usam o cofre para AES (`/cofre/aes`, `/cofre/cifrar`, `/cofre/decifrar`)
+- [x] Testes do cofre em `tests/test_cripto.py` escritos (7 testes)
+- [ ] Rodar o `test_cripto.py` e deixar tudo verde
 - [ ] Listar também as chaves AES (`SECRET_KEY`) no `/cofre/chaves`
-- [ ] Testes do cofre em `tests/test_cripto.py`
+- [ ] Tratar os erros do cofre (ver Limitações)
 
 ### Pendências
 
 - **Import do `src`:** o `main.py` importa `from router import ...`, mas o `router.py` importa `from src.schemas import ...`. Essa mistura faz o pytest falhar com `ModuleNotFoundError: No module named 'src'`. Correção prevista: padronizar para `from schemas import ...`.
-- **Testes dependentes:** alguns testes usam uma chave que não criam. Exemplo: `test_texto_alterado_em_uma_letra_reprova_verificacao` assina com `teste02` sem gerar a chave antes, e falha com `KeyError: 'assinatura'` (a rota devolve `404`). Correção: cada teste gera a própria chave no início (`client.post("chaves/rsa", json={"nome": "teste02"})`).
+- **Testes dependentes (Parte 1):** alguns testes usam uma chave que não criam. Exemplo: `test_texto_alterado_em_uma_letra_reprova_verificacao` assina com `teste02` sem gerar a chave antes, e falha com `KeyError: 'assinatura'` (a rota devolve `404`). Correção: cada teste gera a própria chave no início (`client.post("chaves/rsa", json={"nome": "teste02"})`).
+- **Campo da assinatura no cofre:** a rota `/cofre/assinar` devolve `texto_assinado`, mas os testes leem `assinatura_cofre.json()["assinatura"]`. Os dois precisam usar o mesmo nome, senão o teste dá `KeyError`.
+- **Aviso do VS Code no `from main import app`:** o editor não acha o `main.py` porque ele está em `src/` e os testes em `tests/`. Dentro do Docker o pytest pode encontrar normalmente; conferir rodando.
 
 ### Limitações conhecidas
 
-- Chamar `/rsa` ou `/aes` com um nome que **já existe** sobrescreve a chave anterior.
-- Base64 malformado no `/verificar` ou no `/decifrar` ainda retorna `500`.
+- Chamar `/rsa` ou `/aes` (Parte 1) com um nome que **já existe** sobrescreve a chave anterior.
+- No **cofre** é diferente: gerar duas vezes com o mesmo nome **não sobrescreve**, cria uma segunda chave com o mesmo label. Depois disso, `assinar`, `verificar`, `cifrar` e `decifrar` com esse nome estouram `MultipleObjectsReturned` (`500`).
+- Pedir uma chave que não existe no cofre estoura `NoSuchKey` (`500`). O `except FileNotFoundError` da Parte 1 não serve aqui, porque no cofre não há arquivo.
+- Base64 malformado no `/verificar`, no `/decifrar` e nas rotas equivalentes do cofre ainda retorna `500`.
+- Nonce ou cifrado adulterado no `/cofre/decifrar` ainda não foi tratado como `400`.
 - O PIN e o label do token estão fixos no `hsm.py`. Como é um cofre de treino, tudo bem; num projeto real iriam para o `.env`.
 
 ---
