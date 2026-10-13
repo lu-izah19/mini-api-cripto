@@ -124,8 +124,8 @@ def gerar_par_RSA_no_cofre(dados: GerarChaveRequest):
 
 @router.post("/cofre/assinar")
 def assinar_chave_no_cofre(dados: AssinarRequest):
-    texto_cofre_assinada = assinar_no_cofre(dados.nome, dados.texto)
-    texto_assinado_b64 = base64.b64encode(texto_cofre_assinada).decode("utf-8")
+    assinatura = assinar_no_cofre(dados.nome, dados.texto)
+    texto_assinado_b64 = base64.b64encode(assinatura).decode("utf-8")
     return {"texto_assinado": texto_assinado_b64}
 
 @router.post("/cofre/verificar")
