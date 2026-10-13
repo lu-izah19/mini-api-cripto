@@ -1,5 +1,3 @@
-from inspect import Attribute
-
 from cryptography.exceptions import InvalidSignature, InvalidTag
 from fastapi import APIRouter, HTTPException
 from schemas import AssinarRequest, GerarChaveRequest, VerificarRequest, CifrarRequest, DecifrarRequest
