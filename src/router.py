@@ -9,6 +9,7 @@ import base64
 import os
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from hsm import sessao_hsm, gerar_par_no_cofre, assinar_no_cofre, verificar_no_cofre
+from hsm import gerar_aes_no_cofre, cifrar_aes_no_cofre, decifrar_aes_no_cofre
 from pkcs11 import Attribute, ObjectClass
 
 router = APIRouter(prefix="/chaves", tags=["chaves"])
