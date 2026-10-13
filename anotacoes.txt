@@ -1,0 +1,34 @@
+_____________________ ANOTAÇÕES _____________________
+
+- Qual a diferença entre assinar e cifrar?
+Cifrar protege a chave e deixa dificil alguem acabar lendo por que soemnte a chave privada pode abrir.
+
+- Por que existem duas chaves no RSA e só uma no AES?
+o AES e simétrico, ou seja, uma chave tranca e destranca mas pode ser interceptada,
+já o RSA são duas chaves matemáticamente ligadas q tornam dificil q sea intercetado,
+porém torna o processo mais lento.
+
+- Por que se assina o hash e não o documento?
+Por conta do tamanho ja que o RSA so opera em um bloco medor q a chave,
+pela velocidade considerando que a operação RSA é cara e por segurança,
+ja q se mudar uma letra o hash também muda inteiro.
+
+- Por que o IV precisa ser diferente a cada cifragem?
+Com mesma chave + mesmo IV + mesma mensagem, sai o mesmo texto cifrado.
+Aí o atacante não precisa quebrar nada: só de olhar ele vê que duas mensagens são
+iguais e começa a deduzir padrões.
+Em modos como CTR e GCM é pior ainda: repetir o IV (nonce) permite fazer XOR dos dois
+cifrados e recuperar informação dos textos originais, e no GCM ainda vaza a chave de autenticação,
+o que permite forjar mensagens.
+
+Detalhe que confunde muita gente: o IV não é segredo. Ele vai junto com o cifrado.
+Ele só precisa ser único.
+
+- O que muda entre a Parte 1 e a Parte 2? Por que o HSM existe?
+Na parte 1 as chaves são geradas pelo python e a chave privda fica guardada num arquivo, 
+tornando facil que alguem invada o servidor e copie a chave, já na parte 2 as chaves nascem
+e vivem dentro do HSM deixando impossivel q alguem de fora roube a chave. 
+
+- O que foi mais difícil de entender?
+
+Foi difícil entender o motivo eo uso do IV.
