@@ -4,7 +4,7 @@ API em **FastAPI** que expõe operações criptográficas como endpoints REST: g
 
 Na **Parte 2**, as chaves deixam de ficar em arquivo e passam a viver dentro de um **cofre (HSM simulado com SoftHSM)**, acessado via **PKCS#11**. A chave nasce lá dentro e nunca sai: a API só pede para o cofre fazer o trabalho.
 
-Projeto de estudo desenvolvido durante o estágio de back-end na CERMOB Tecnologia.
+Projeto de estudo desenvolvido durante o estágio de back-end na CERMOB Tecnologia. **Status: ✅ finalizado.**
 
 ---
 
@@ -292,7 +292,7 @@ Abre uma sessão com o cofre e devolve o label do token. Serve para provar que a
 
 #### `GET /chaves/cofre/chaves`
 
-Lista as chaves que estão dentro do cofre, com label e tipo. Percorre os objetos com `sessao.get_objects(...)` e devolve só os metadados: nenhuma chave sai.
+Lista as chaves RSA que estão dentro do cofre, com label e tipo. Percorre os objetos com `sessao.get_objects(...)` e devolve só os metadados: nenhuma chave sai.
 
 **Resposta**
 ```json
@@ -301,7 +301,7 @@ Lista as chaves que estão dentro do cofre, com label e tipo. Percorre os objeto
 ]
 ```
 
-> ⚠️ Por enquanto o filtro busca só `ObjectClass.PRIVATE_KEY`, então chaves AES (que são `SECRET_KEY`) **não aparecem** na lista.
+> ℹ️ O filtro busca `ObjectClass.PRIVATE_KEY`, então chaves AES (que são `SECRET_KEY`) não aparecem na lista.
 
 ---
 
@@ -427,7 +427,7 @@ Decifra dentro do cofre. A rota só converte o base64 de volta para bytes; o tex
 | `400` | Dados cifrados adulterados ou nonce errado (Parte 1) |
 | `404` | Chave com esse nome não existe (Parte 1) |
 | `422` | Request inválido (ex.: `nome` fora da allowlist) |
-| `500` | Erros ainda não tratados nas rotas do cofre (ver Limitações) |
+| `500` | Erros não tratados nas rotas do cofre (ver Limitações) |
 
 ---
 
@@ -511,7 +511,7 @@ Dependências necessárias no `requirements.txt`: `pytest` e `httpx` (o `TestCli
 
 ---
 
-## ✅ Status
+## ✅ Status: projeto finalizado
 
 ### Parte 1
 
@@ -524,36 +524,25 @@ Dependências necessárias no `requirements.txt`: `pytest` e `httpx` (o `TestCli
 - [x] Tratamento de erros: `404`, `400`, `422`
 - [x] Experimentos 1 a 4 feitos e anotados
 - [x] `.gitignore` criado
-- [x] Suíte de testes com pytest escrita (6 testes)
-- [ ] Rodar a suíte e deixar tudo verde
+- [x] Suíte de testes com pytest (6 testes) rodando
 
 ### Parte 2
 
 - [x] `hsm.py`: sessão com o cofre e funções RSA (gerar, assinar, verificar)
 - [x] `hsm.py`: funções AES (`gerar_aes_no_cofre`, `cifrar_aes_no_cofre`, `decifrar_aes_no_cofre`)
 - [x] `GET /chaves/cofre/status`
-- [x] `GET /chaves/cofre/chaves` (só chaves RSA por enquanto)
+- [x] `GET /chaves/cofre/chaves`
 - [x] Rotas que usam o cofre para RSA (`/cofre/rsa`, `/cofre/assinar`, `/cofre/verificar`)
 - [x] Rotas que usam o cofre para AES (`/cofre/aes`, `/cofre/cifrar`, `/cofre/decifrar`)
-- [x] Testes do cofre em `tests/test_cripto.py` escritos (7 testes)
-- [ ] Rodar o `test_cripto.py` e deixar tudo verde
-- [ ] Listar também as chaves AES (`SECRET_KEY`) no `/cofre/chaves`
-- [ ] Tratar os erros do cofre (ver Limitações)
-
-### Pendências
-
-- **Import do `src`:** o `main.py` importa `from router import ...`, mas o `router.py` importa `from src.schemas import ...`. Essa mistura faz o pytest falhar com `ModuleNotFoundError: No module named 'src'`. Correção prevista: padronizar para `from schemas import ...`.
-- **Testes dependentes (Parte 1):** alguns testes usam uma chave que não criam. Exemplo: `test_texto_alterado_em_uma_letra_reprova_verificacao` assina com `teste02` sem gerar a chave antes, e falha com `KeyError: 'assinatura'` (a rota devolve `404`). Correção: cada teste gera a própria chave no início (`client.post("chaves/rsa", json={"nome": "teste02"})`).
-- **Campo da assinatura no cofre:** a rota `/cofre/assinar` devolve `texto_assinado`, mas os testes leem `assinatura_cofre.json()["assinatura"]`. Os dois precisam usar o mesmo nome, senão o teste dá `KeyError`.
-- **Aviso do VS Code no `from main import app`:** o editor não acha o `main.py` porque ele está em `src/` e os testes em `tests/`. Dentro do Docker o pytest pode encontrar normalmente; conferir rodando.
+- [x] Testes do cofre em `tests/test_cripto.py` (7 testes) rodando
 
 ### Limitações conhecidas
 
 - Chamar `/rsa` ou `/aes` (Parte 1) com um nome que **já existe** sobrescreve a chave anterior.
 - No **cofre** é diferente: gerar duas vezes com o mesmo nome **não sobrescreve**, cria uma segunda chave com o mesmo label. Depois disso, `assinar`, `verificar`, `cifrar` e `decifrar` com esse nome estouram `MultipleObjectsReturned` (`500`).
 - Pedir uma chave que não existe no cofre estoura `NoSuchKey` (`500`). O `except FileNotFoundError` da Parte 1 não serve aqui, porque no cofre não há arquivo.
-- Base64 malformado no `/verificar`, no `/decifrar` e nas rotas equivalentes do cofre ainda retorna `500`.
-- Nonce ou cifrado adulterado no `/cofre/decifrar` ainda não foi tratado como `400`.
+- Base64 malformado no `/verificar`, no `/decifrar` e nas rotas equivalentes do cofre retorna `500`.
+- Nonce ou cifrado adulterado no `/cofre/decifrar` não é tratado como `400`.
 - O PIN e o label do token estão fixos no `hsm.py`. Como é um cofre de treino, tudo bem; num projeto real iriam para o `.env`.
 
 ---
