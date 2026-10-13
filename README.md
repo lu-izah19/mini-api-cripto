@@ -334,10 +334,10 @@ Pede ao cofre para assinar o texto com a privada guardada lá.
 
 **Resposta**
 ```json
-{ "texto_assinado": "kj3h2K...==" }
+{ "assinatura": "kj3h2K...==" }
 ```
 
-> ⚠️ O valor de `texto_assinado` é a **assinatura** em base64. É ele que vai no campo `assinatura_b64` do `/cofre/verificar`.
+O campo tem o mesmo nome da `/assinar` da Parte 1. O valor de `assinatura` é o que vai no campo `assinatura_b64` do `/cofre/verificar`.
 
 ---
 
