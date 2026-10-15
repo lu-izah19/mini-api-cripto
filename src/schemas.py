@@ -27,3 +27,26 @@ class DecifrarRequest(BaseModel):
     nome: str = Field(pattern=r"^[a-zA-Z0-9_-]+$")
     texto_cifrado: str = Field(description="Texto cifrado em base64")
     nonce: str = Field(description="Nonce utilizado na cifragem em base64")
+
+class Chave(BaseModel):
+    total: int
+    rsa: int
+    aes: int
+
+class Operacoes(BaseModel):
+    total: int 
+    rota: dict[str, int]
+
+class Disco(BaseModel):
+    bytes: int
+    legivel: str
+
+class Tempo_no_ar(BaseModel):
+    segundos: int
+    legivel: str
+
+class MonitoramentoResponse(BaseModel):
+    disco: Disco
+    chave: Chave 
+    operacoes: Operacoes
+    tempo: Tempo_no_ar
