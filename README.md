@@ -4,6 +4,8 @@ API em **FastAPI** que expõe operações criptográficas como endpoints REST: g
 
 Na **Parte 2**, as chaves deixam de ficar em arquivo e passam a viver dentro de um **cofre (HSM simulado com SoftHSM)**, acessado via **PKCS#11**. A chave nasce lá dentro e nunca sai: a API só pede para o cofre fazer o trabalho.
 
+No **RF-08**, a API ganhou um **painel de monitoramento** (`GET /monitoramento`) que mostra quantas chaves existem, quantas operações foram feitas, quanto espaço as chaves ocupam no disco e há quanto tempo a API está no ar.
+
 Projeto de estudo desenvolvido durante o estágio de back-end na CERMOB Tecnologia. **Status: ✅ finalizado.**
 
 ---
@@ -27,13 +29,15 @@ Projeto de estudo desenvolvido durante o estágio de back-end na CERMOB Tecnolog
 ```
 .
 ├── src/
-│   ├── main.py          # instancia o FastAPI e inclui o router
-│   ├── router.py        # rotas da API (Parte 1 e Parte 2)
-│   ├── schemas.py       # modelos Pydantic de request
+│   ├── main.py          # instancia o FastAPI, inclui o router, middleware de contagem e rotas /saude e /monitoramento
+│   ├── router.py        # rotas da API (Parte 1 e Parte 2), com prefixo /chaves
+│   ├── schemas.py       # modelos Pydantic de request e da resposta do monitoramento
+│   ├── metricas.py      # métricas do monitoramento: tempo no ar, operações, chaves e disco
 │   └── hsm.py           # funções que conversam com o cofre (PKCS#11)
 ├── tests/
-│   ├── test_router.py   # testes das rotas da Parte 1
-│   └── test_cripto.py   # testes do cofre (Parte 2)
+│   ├── test_router.py         # testes das rotas da Parte 1
+│   ├── test_cripto.py         # testes do cofre (Parte 2)
+│   └── test_monitoramento.py  # testes do painel de monitoramento (RF-08)
 ├── chaves/              # chaves geradas na Parte 1 (criada automaticamente, NÃO vai pro repositório)
 ├── .gitignore
 ├── Dockerfile
@@ -48,6 +52,8 @@ Projeto de estudo desenvolvido durante o estágio de back-end na CERMOB Tecnolog
 
 ## 🚀 Como rodar
 
+### Com Docker
+
 **Pré-requisitos:** Docker e Docker Compose.
 
 ```bash
@@ -58,14 +64,27 @@ docker compose up --build
 docker compose up -d
 ```
 
-A API sobe em `http://localhost:8000` e a documentação interativa fica em:
-
-- Swagger UI → `http://localhost:8000/docs`
-- ReDoc → `http://localhost:8000/redoc`
-
 O Uvicorn observa a pasta `/app`, então qualquer alteração no código recarrega a API sozinha.
 
 Para conferir se está de pé: `docker compose ps` (o container deve aparecer como `Running`) ou abrir o Swagger.
+
+### Sem Docker (Windows)
+
+Funciona para a Parte 1 e para o monitoramento. O cofre (Parte 2) **não** roda assim (ver Limitações).
+
+```powershell
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn main:app --reload --app-dir src
+```
+
+> ⚠️ Se o projeto veio de um `.zip` do GitHub, ele costuma ficar numa pasta dentro de outra com o mesmo nome. Os comandos precisam rodar na pasta **de dentro**, a que tem o `src/`. Senão aparece `Could not import module "main"`.
+
+### Documentação interativa
+
+- Swagger UI → `http://localhost:8000/docs`
+- ReDoc → `http://localhost:8000/redoc`
 
 ---
 
@@ -419,6 +438,55 @@ Decifra dentro do cofre. A rota só converte o base64 de volta para bytes; o tex
 
 ---
 
+## 📊 Monitoramento (RF-08)
+
+### `GET /monitoramento`
+
+Painel com o estado atual da API. Fica no `main.py`, e **não** no `router.py`: o router tem `prefix="/chaves"`, então a rota viraria `/chaves/monitoramento`.
+
+**Resposta**
+```json
+{
+  "disco":     { "bytes": 6593, "legivel": "6.44 KB" },
+  "chave":     { "total": 7, "rsa": 3, "aes": 4 },
+  "operacoes": { "total": 4, "rota": { "/docs": 1, "/openapi.json": 1, "/monitoramento": 1, "/": 1 } },
+  "tempo":     { "segundos": 30, "legivel": "0h 0min 30s" }
+}
+```
+
+A resposta é validada por `MonitoramentoResponse`, um schema que junta quatro schemas menores: `Chave`, `Operacoes`, `Disco` e `Tempo_no_ar`.
+
+### Como cada métrica é calculada (`src/metricas.py`)
+
+| Métrica | Como funciona | Onde fica |
+|---|---|---|
+| Tempo no ar | A hora de subida é guardada no **topo do módulo**, que roda uma vez só, no primeiro `import`. A rota calcula a diferença até agora | memória |
+| Operações | Um **middleware** no `main.py` registra o caminho de toda requisição antes de repassar para a rota (`call_next`). Conta o total e por rota | memória |
+| Chaves | Conta os arquivos da pasta `chaves/` pelo padrão do nome (`_privada.pem` = RSA, `_aes.key` = AES) | disco |
+| Disco | Soma o tamanho dos arquivos de chave com `pathlib` + `stat()` | disco |
+
+### Decisões
+
+| # | Pergunta | Decisão | Por quê |
+|---|---|---|---|
+| 1 | Um par RSA conta como 1 ou 2 chaves? | **1** | Pública e privada são as duas metades de uma mesma chave, geradas juntas numa única chamada |
+| 2 | A `/monitoramento` conta ela mesma? | **Sim** (previsto e confirmado) | O middleware registra **antes** do `call_next`. Na primeira chamada depois de reiniciar, o total já vem `1` |
+| 3 | O que acontece com os números quando a API reinicia? | Operações e tempo no ar **zeram**; chaves e disco **continuam** | Os dois primeiros ficam em variáveis (RAM); os dois últimos vêm de arquivos (disco). Um histórico exigiria salvar o contador em arquivo ou banco |
+
+> 👀 Abrir o `/docs` no navegador conta **2 operações a mais** (`/docs` e `/openapi.json`), porque o próprio navegador faz essas requisições para montar a página.
+
+### Requisito original × o que foi pedido
+
+| RF-08 (original) | Tabela da tarefa | O que aconteceu |
+|---|---|---|
+| Chaves **por partição** | Chaves **por tipo** | ⚠️ Trocado: a mini API não tem partições, todas as chaves ficam na mesma pasta. O único critério que existe é o tipo |
+| Uso de **memória** e disco | Espaço em **disco** | ⚠️ Memória tirada: a mini API não tem uma memória de HSM pra medir, as chaves vivem em arquivos |
+| Número de operações | Operações por rota | ✅ Mantido (e detalhado por rota) |
+| Tempo real / máx. 60s | — | ❌ Tirado: a rota é um `GET` e só responde quando alguém chama. Atualizar a cada 60s é papel de quem consome a API |
+| — | **Tempo no ar** | ➕ Acrescentado: como o contador zera ao reiniciar, o tempo no ar mostra desde quando ele está contando |
+
+---
+
 ## 🚦 Códigos de resposta
 
 | Código | Quando acontece |
@@ -437,13 +505,21 @@ Os testes ficam em `tests/` e usam o `TestClient` do FastAPI, que faz requisiç�
 
 ### Como rodar
 
-Com o container de pé:
+Com Docker (container de pé):
 
 ```bash
 docker compose exec api pytest
 ```
 
+Sem Docker (Windows, PowerShell):
+
+```powershell
+$env:PYTHONPATH="src"; pytest
+```
+
 > `api` é o nome do serviço no `docker-compose.yml`. Para ver `print` durante os testes, use `pytest -s`.
+>
+> Sem Docker, o `PYTHONPATH="src"` é o que faz o `from main import app` funcionar. O VS Code pode sublinhar esse import de amarelo (`could not be resolved`), mas o pytest roda normal.
 
 Dependências necessárias no `requirements.txt`: `pytest` e `httpx` (o `TestClient` usa o `httpx` por baixo).
 
@@ -472,20 +548,33 @@ Dependências necessárias no `requirements.txt`: `pytest` e `httpx` (o `TestCli
 | `test_cifrar_decifrar_pelo_cofre_devolve_original` | Gerar AES → cifrar → decifrar devolve exatamente o texto original |
 | `test_listar_chaves_devolve_as_que_foram_criadas` | Uma chave RSA recém-criada aparece no `/cofre/chaves` |
 
+### Monitoramento: `test_monitoramento.py`
+
+| Teste | O que prova |
+|---|---|
+| `test_monitoramento_responde` | `/monitoramento` responde `200` com as quatro seções (`disco`, `chave`, `operacoes`, `tempo`) |
+| `test_gerar_chave_aumenta_total` | Gerar um par RSA aumenta o total de chaves em **1** (Decisão 1) |
+| `test_3_chamadas_aumenta_total` | 3 chamadas aumentam o total de operações em **4**: as 3 + a própria `/monitoramento` do `depois` (prova automática da Decisão 2) |
+| `test_tempo_no_ar_maior_que_zero` | O tempo no ar em segundos é maior que zero |
+| `test_gerar_chave_aumenta_espaco_disco` | Gerar uma chave aumenta os bytes ocupados no disco (`>`, porque o tamanho exato varia) |
+
 ### Padrões usados
 
 - **Chamadas encadeadas:** a resposta de uma rota alimenta a próxima (ex.: a assinatura do `/assinar` vai pro `/verificar`).
+- **Antes e depois:** lê a métrica, faz a ação, lê de novo e compara. É o esqueleto dos testes de monitoramento.
+- **Contar todas as requisições:** no teste de operações, a chamada que lê o `depois` também passa pelo middleware e entra na conta.
 - **Cada teste cria a própria chave:** nunca depende de uma chave que outro teste (ou o Swagger) criou.
 - **Nome único com `uuid`:** no cofre, a chave **não some** quando o teste acaba. Por isso cada teste usa `f"teste_cofre_{uuid.uuid4().hex}"`, e rodar o pytest várias vezes não gera labels duplicados.
 - **Texto numa variável:** `texto = "..."` usado no assinar e no verificar (ou no cifrar e no decifrar) garante que os dois passos falam da mesma coisa.
 - **Status antes do conteúdo:** o `assert` do `status_code` vem primeiro. Se a rota falhar, o erro fica claro ("esperava 200, veio 404") em vez de um `KeyError` confuso.
-- **Ler a resposta:** `resposta.json()["campo"]` transforma o corpo em dicionário e pega o campo.
+- **Ler a resposta:** `resposta.json()["campo"]` transforma o corpo em dicionário e pega o campo. Para JSON aninhado, encadeia: `["chave"]["total"]`.
 - **Procurar numa lista de dicionários:** montar uma lista só com os labels (`for` + `.append(chave["label"])`) e aí usar `nome in lista`.
 - **Conferir erro de rota:** `resposta.status_code == 400` confere o código HTTP direto, sem `.json()`.
 - **Conferir que algo DÁ erro:** `with pytest.raises(AttributeSensitive):` só passa se o código de dentro estourar essa exceção.
 - **Falar direto com o cofre:** quando nenhuma rota faz o que o teste precisa (como tentar ler a privada), o teste abre `sessao_hsm()` sozinho. Tudo que usa a sessão fica **dentro** do `with`.
 - **Nonce errado de verdade:** em vez de inventar um texto qualquer (que nem seria base64 válido), o teste usa o nonce de uma segunda cifragem. Assim ele é válido, mas pertence à mensagem errada, e o teste prova que o GCM detecta isso.
 - **Depurar `KeyError`:** quando `resposta.json()["campo"]` dá `KeyError`, a rota devolveu erro em vez de sucesso, ou o nome do campo não bate com o `return` da rota. Um `print(resposta.status_code, resposta.json())` antes mostra o que veio.
+- **Depurar `500`:** o `/docs` só mostra "Internal Server Error". O motivo real fica no **final** do traceback no terminal (traceback se lê de baixo pra cima). Um `ResponseValidationError` com `input: None` quer dizer que a rota esqueceu o `return`.
 
 ---
 
@@ -504,10 +593,16 @@ Dependências necessárias no `requirements.txt`: `pytest` e `httpx` (o `TestCli
 - **400 vs 500:** `400` é erro tratado (o cliente mandou dado ruim e a API sabia o que fazer); `500` é erro não tratado (a API quebrou).
 - **Resposta vs erro:** assinatura inválida é uma resposta legítima (`200` + `false`), não um erro do cliente.
 - **HSM / PKCS#11:** a chave fica num cofre e o código só pede operações. Chave marcada como `SENSITIVE` e não `EXTRACTABLE` não pode ser lida nem pelo próprio dono.
+- **Partição (HSM):** área isolada dentro do cofre, com chaves, PIN e usuários próprios, como apartamentos num prédio.
 - **Chave secreta (`SECRET_KEY`):** no PKCS#11, chave simétrica (AES) não é privada nem pública, é "secreta".
 - **Menor privilégio:** a chave só recebe as permissões de que precisa (`ENCRYPT`/`DECRYPT` para AES, `SIGN`/`VERIFY` para RSA).
 - **Tupla e desempacotamento:** uma função que faz `return a, b` devolve uma tupla, que pode ser recebida direto em duas variáveis: `x, y = funcao()`.
 - **Escopo local:** uma variável criada dentro de uma função só existe ali, então duas rotas podem usar o mesmo nome de variável sem conflito.
+- **Middleware:** código que roda em toda requisição, antes e depois da rota, sem precisar mexer em cada rota.
+- **Código no topo do módulo:** roda uma vez só, no primeiro `import`. Bom lugar para guardar a hora de subida.
+- **Memória (RAM) vs disco:** o que está em variável some quando o programa para; o que está em arquivo continua.
+- **Schemas aninhados:** um modelo Pydantic pode ter outros modelos como campos (`disco: Disco`), formando um JSON em camadas.
+- **`GET` não empurra dados:** a rota só responde quando é chamada. Atualização periódica é responsabilidade de quem consome.
 
 ---
 
@@ -536,6 +631,16 @@ Dependências necessárias no `requirements.txt`: `pytest` e `httpx` (o `TestCli
 - [x] Rotas que usam o cofre para AES (`/cofre/aes`, `/cofre/cifrar`, `/cofre/decifrar`)
 - [x] Testes do cofre em `tests/test_cripto.py` (7 testes) rodando
 
+### RF-08: monitoramento
+
+- [x] `metricas.py`: tempo no ar, contador de operações, contagem de chaves e espaço em disco
+- [x] Middleware contando toda requisição
+- [x] Schemas `Chave`, `Operacoes`, `Disco`, `Tempo_no_ar` e `MonitoramentoResponse`
+- [x] `GET /monitoramento` no `main.py`
+- [x] Decisões 1, 2 e 3 testadas e registradas
+- [x] Testes em `tests/test_monitoramento.py` (5 testes) rodando
+- [x] Entrega 2: comparação com o requisito original e perguntas para quem escreveu o requisito
+
 ### Limitações conhecidas
 
 - Chamar `/rsa` ou `/aes` (Parte 1) com um nome que **já existe** sobrescreve a chave anterior.
@@ -544,6 +649,10 @@ Dependências necessárias no `requirements.txt`: `pytest` e `httpx` (o `TestCli
 - Base64 malformado no `/verificar`, no `/decifrar` e nas rotas equivalentes do cofre retorna `500`.
 - Nonce ou cifrado adulterado no `/cofre/decifrar` não é tratado como `400`.
 - O PIN e o label do token estão fixos no `hsm.py`. Como é um cofre de treino, tudo bem; num projeto real iriam para o `.env`.
+- **O cofre não roda sem Docker no Windows:** o `hsm.py` carrega o SoftHSM pelo caminho de Linux (`/usr/lib/softhsm/libsofthsm2.so`), que só existe dentro do container. Limitação de ambiente, não de código.
+- **O monitoramento conta só as chaves em arquivo** (Parte 1). As chaves do cofre ficam de fora, pelo mesmo motivo acima.
+- **Os contadores do monitoramento zeram** quando a API reinicia (ficam em memória).
+- **Os testes `test_gerar_chave_aumenta_total` e `test_gerar_chave_aumenta_espaco_disco` usam nomes fixos.** Na segunda rodada do pytest a chave já existe e é sobrescrita, então o total e o disco não aumentam e o teste falha. É preciso apagar `testeMonitoramento` e `testeEspacoDisco` da pasta `chaves/` antes de rodar de novo (ou usar `uuid`, como nos testes do cofre).
 
 ---
 
