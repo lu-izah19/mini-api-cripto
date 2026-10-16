@@ -1,0 +1,23 @@
+.cabecalho {
+    text-align: center;
+}
+
+.containerMonitoramento {
+    text-align: center;
+    display: grid;
+    grid-template-columns: 1fr, 1fr, 1fr, 1fr;
+    grid-template-rows: 1fr;
+    padding: 2%;
+    gap: 1%;
+}
+
+.dado1,
+.dado2,
+.dado3,
+.dado4 {
+    padding: 2%;
+}
+
+.rodape {
+    text-align: center;
+}
