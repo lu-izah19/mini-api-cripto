@@ -1,8 +1,9 @@
 from fastapi import FastAPI, Request
-import metricas
-from schemas import MonitoramentoResponse, Chave, Operacoes, Disco, Tempo_no_ar
+from fastapi.staticfiles import StaticFiles
 
+import metricas
 from router import router
+from schemas import Chave, Disco, MonitoramentoResponse, Operacoes, Tempo_no_ar
 
 app = FastAPI(title="Mini API de criptografia")
 app.include_router(router)
@@ -33,3 +34,5 @@ def monitoramento():
         disco=Disco(bytes=bytes, legivel=disco_legivel),
         tempo=Tempo_no_ar(segundos=diferenca, legivel=tempo_legivel),
     )
+
+app.mount("/", StaticFiles(directory="screen", html=True), name="painel")
