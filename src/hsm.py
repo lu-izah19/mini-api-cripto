@@ -27,7 +27,7 @@ def sessao_hsm():
 def gerar_par_no_cofre(label: str) -> bytes:
     """Gera um par RSA DENTRO do cofre. A privada nunca sai."""
     with sessao_hsm() as sessao:
-        publica, privada = sessao.generate_keypair(
+        publica, _privada = sessao.generate_keypair(
             KeyType.RSA,
             2048,
             store=True,          # guarda no cofre (não só na sessão)
@@ -70,7 +70,7 @@ def verificar_no_cofre(label: str, texto: str, assinatura: bytes) -> bool:
 
 def gerar_aes_no_cofre(label: str):
     with sessao_hsm() as sessao:
-        pchave_aes = sessao.generate_key(
+        sessao.generate_key(
             KeyType.AES,
             256,
             store=True,
