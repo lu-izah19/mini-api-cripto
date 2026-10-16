@@ -6,7 +6,9 @@ Na **Parte 2**, as chaves deixam de ficar em arquivo e passam a viver dentro de 
 
 No **RF-08**, a API ganhou um **painel de monitoramento** (`GET /monitoramento`) que mostra quantas chaves existem, quantas operações foram feitas, quanto espaço as chaves ocupam no disco e há quanto tempo a API está no ar.
 
-Projeto de estudo desenvolvido durante o estágio de back-end na CERMOB Tecnologia. **Status: ✅ finalizado.**
+Por fim, o painel ganhou uma **tela**: uma página em **HTML e JavaScript puro**, servida pela própria API em `http://localhost:8000/`, que consome a `/monitoramento` e se atualiza sozinha a cada 10 segundos.
+
+Projeto de estudo desenvolvido durante o estágio de back-end na CERMOB Tecnologia. **Status: ✅ finalizado** (falta só o CSS da tela).
 
 ---
 
@@ -19,6 +21,7 @@ Projeto de estudo desenvolvido durante o estágio de back-end na CERMOB Tecnolog
 | Criptografia | [`cryptography`](https://cryptography.io/) |
 | Cofre (HSM) | SoftHSM2 + [`python-pkcs11`](https://python-pkcs11.readthedocs.io/) |
 | Validação | Pydantic |
+| Tela do painel | HTML + JavaScript puro (sem framework, sem biblioteca de CSS) |
 | Container | Docker + Docker Compose |
 | Testes | pytest + `TestClient` + httpx |
 
@@ -29,11 +32,15 @@ Projeto de estudo desenvolvido durante o estágio de back-end na CERMOB Tecnolog
 ```
 .
 ├── src/
-│   ├── main.py          # instancia o FastAPI, inclui o router, middleware de contagem e rotas /saude e /monitoramento
+│   ├── main.py          # instancia o FastAPI, inclui o router, middleware de contagem, rotas /saude e /monitoramento e serve a tela
 │   ├── router.py        # rotas da API (Parte 1 e Parte 2), com prefixo /chaves
 │   ├── schemas.py       # modelos Pydantic de request e da resposta do monitoramento
 │   ├── metricas.py      # métricas do monitoramento: tempo no ar, operações, chaves e disco
 │   └── hsm.py           # funções que conversam com o cofre (PKCS#11)
+├── screen/              # tela do painel (front-end), separada do Python
+│   ├── index.html       # estrutura da página: rótulos fixos e spans com id para os valores
+│   ├── script.js        # busca a /monitoramento, preenche a tela e se repete a cada 10s
+│   └── style.css        # visual da tela
 ├── tests/
 │   ├── test_router.py         # testes das rotas da Parte 1
 │   ├── test_cripto.py         # testes do cofre (Parte 2)
@@ -70,7 +77,7 @@ Para conferir se está de pé: `docker compose ps` (o container deve aparecer co
 
 ### Sem Docker (Windows)
 
-Funciona para a Parte 1 e para o monitoramento. O cofre (Parte 2) **não** roda assim (ver Limitações).
+Funciona para a Parte 1, o monitoramento e a tela do painel. O cofre (Parte 2) **não** roda assim (ver Limitações).
 
 ```powershell
 python -m venv venv
@@ -80,9 +87,12 @@ uvicorn main:app --reload --app-dir src
 ```
 
 > ⚠️ Se o projeto veio de um `.zip` do GitHub, ele costuma ficar numa pasta dentro de outra com o mesmo nome. Os comandos precisam rodar na pasta **de dentro**, a que tem o `src/`. Senão aparece `Could not import module "main"`.
+>
+> 💡 Use **dois terminais**: um só para o uvicorn e outro para pytest, ruff e o resto. Se você der `Ctrl+C` no uvicorn para rodar outra coisa, a API cai e o Swagger mostra `Failed to fetch`.
 
-### Documentação interativa
+### Endereços
 
+- Tela do painel → `http://localhost:8000/`
 - Swagger UI → `http://localhost:8000/docs`
 - ReDoc → `http://localhost:8000/redoc`
 
@@ -482,8 +492,64 @@ A resposta é validada por `MonitoramentoResponse`, um schema que junta quatro s
 | Chaves **por partição** | Chaves **por tipo** | ⚠️ Trocado: a mini API não tem partições, todas as chaves ficam na mesma pasta. O único critério que existe é o tipo |
 | Uso de **memória** e disco | Espaço em **disco** | ⚠️ Memória tirada: a mini API não tem uma memória de HSM pra medir, as chaves vivem em arquivos |
 | Número de operações | Operações por rota | ✅ Mantido (e detalhado por rota) |
-| Tempo real / máx. 60s | — | ❌ Tirado: a rota é um `GET` e só responde quando alguém chama. Atualizar a cada 60s é papel de quem consome a API |
+| Tempo real / máx. 60s | — | ✅ Resolvido pela **tela do painel**: a rota continua sendo um `GET` que só responde quando chamada, e quem garante a atualização é o consumidor (a tela, a cada 10s) |
 | — | **Tempo no ar** | ➕ Acrescentado: como o contador zera ao reiniciar, o tempo no ar mostra desde quando ele está contando |
+
+---
+
+## 🖥️ Tela do painel
+
+Na Entrega 2 ficou registrado que atualizar a cada 60 segundos é responsabilidade de **quem consome** a API, não da rota. A tela é esse consumidor.
+
+Abre em `http://localhost:8000/` e mostra chaves, operações, disco e tempo no ar, cada um com rótulo, além do **status da conexão** e da **hora da última atualização**.
+
+### Como a API entrega a página
+
+A pasta `screen/` é servida pelo `StaticFiles` do FastAPI, montado na raiz:
+
+```python
+PASTA_SCREEN = Path(__file__).resolve().parent.parent / "screen"
+
+app.mount("/", StaticFiles(directory=PASTA_SCREEN, html=True), name="painel")
+```
+
+- **`html=True`:** quando alguém pede `/`, entrega o `index.html` automaticamente.
+- **O mount fica no final do `main.py`**, depois do router e das rotas. Montado em `/`, ele aceita qualquer caminho; se viesse antes, engoliria `/docs`, `/monitoramento` e as rotas `/chaves/...`.
+- **O caminho é ancorado no próprio `main.py`** (`Path(__file__)`). Com o caminho relativo `"screen"`, a API não encontrava a pasta dependendo de onde o uvicorn era executado.
+- **Por que servir pela API, e não abrir o arquivo com dois cliques:** aberto como arquivo, a página fica em outra origem e o navegador bloqueia o `fetch` por **CORS**. Servida pela API, página e rota estão na mesma origem, e o `fetch("/monitoramento")` usa só o caminho.
+
+### Como a tela funciona (`screen/script.js`)
+
+| Passo | O que faz |
+|---|---|
+| `fetch("/monitoramento")` + `await` | Pede os dados para a API e espera a resposta |
+| `await resposta.json()` | Transforma a resposta em objeto JavaScript |
+| `getElementById(...).textContent` | Escreve cada valor no `span` correspondente (`dados.chave.total`, `dados.disco.legivel`...) |
+| `try/catch` | Se a API não responder, cai no `catch` |
+| `buscarDados()` | Primeira chamada assim que a página abre, para não ficar com `--` esperando o primeiro intervalo |
+| `setInterval(buscarDados, 10000)` | Repete a cada 10 segundos, sem recarregar a página |
+
+**No HTML**, o texto fixo (rótulo) e o valor ficam em elementos separados: só o `span` do valor tem `id`, porque é a única coisa que o JavaScript troca. Antes do primeiro dado chegar, os valores mostram `--`, para a tela não exibir um `0` que pareceria real.
+
+### Decisões da tela
+
+| # | Pergunta | Decisão | Por quê |
+|---|---|---|---|
+| 1 | De quanto em quanto tempo atualizar? | **10 segundos** | Chave e disco não mudam rápido, e o painel também conta como operação. Com 1 segundo, o contador subiu de 41 para 207 em cerca de 10 minutos |
+| 2 | Quando a hora da última atualização muda? | **Só quando o fetch dá certo** | Fica no final do `try`. Se a API cair, a hora congela e mostra quando foi o último dado válido |
+| 3 | O que fazer com os números quando a API cai? | **Apagar (voltar para `--`)** | Número velho com cara de atual leva quem olha a decidir com informação errada. O status muda para "sem conexão" e a hora continua mostrando quando foi o último dado bom |
+
+### Verificação (manual)
+
+- [x] `localhost:8000/` mostra os quatro números com rótulo
+- [x] Gerei uma chave pelo `/docs` numa aba e o número mudou sozinho na outra, sem recarregar
+- [x] Derrubei a API e a tela avisou "sem conexão" e apagou os números
+- [x] Subi a API de novo e a tela voltou a atualizar sozinha
+- [x] `/monitoramento`, `/docs` e `/chaves/rsa` continuam respondendo
+
+> 💡 **Mexeu no `script.js`? Recarregue com `Ctrl+Shift+R` com a API de pé.** A aba continua rodando a versão do JavaScript que baixou quando abriu, e o `setInterval` segue chamando essa cópia antiga. Com a API derrubada nem dá para recarregar, porque é ela quem entrega o arquivo.
+>
+> 🔍 **Erro de front-end é silencioso:** a página só fica em branco ou com `--`. O motivo aparece no console do navegador (`F12` → aba **Console**). Um `getElementById` com id errado, por exemplo, devolve `null` e dá `Cannot set properties of null`.
 
 ---
 
@@ -493,7 +559,7 @@ A resposta é validada por `MonitoramentoResponse`, um schema que junta quatro s
 |---|---|
 | `200` | Deu certo (inclusive `{ "valida": false }`: assinatura que não bate é resposta, não erro) |
 | `400` | Dados cifrados adulterados ou nonce errado (Parte 1) |
-| `404` | Chave com esse nome não existe (Parte 1) |
+| `404` | Chave com esse nome não existe (Parte 1), ou caminho que não é rota nem arquivo da `screen/` |
 | `422` | Request inválido (ex.: `nome` fora da allowlist) |
 | `500` | Erros não tratados nas rotas do cofre (ver Limitações) |
 
@@ -519,7 +585,9 @@ $env:PYTHONPATH="src"; pytest
 
 > `api` é o nome do serviço no `docker-compose.yml`. Para ver `print` durante os testes, use `pytest -s`.
 >
-> Sem Docker, o `PYTHONPATH="src"` é o que faz o `from main import app` funcionar. O VS Code pode sublinhar esse import de amarelo (`could not be resolved`), mas o pytest roda normal.
+> Sem Docker, o `PYTHONPATH="src"` é o que faz o `from main import app` funcionar (é o equivalente do `--app-dir src` do uvicorn). Sem ele, aparece `ModuleNotFoundError: No module named 'main'`. O VS Code pode sublinhar esse import de amarelo (`could not be resolved`), mas o pytest roda normal.
+>
+> Sem Docker, os **7 testes do cofre falham** com `OS exception while loading /usr/lib/softhsm/libsofthsm2.so`: o SoftHSM só existe dentro do container. Os outros 11 passam.
 
 Dependências necessárias no `requirements.txt`: `pytest` e `httpx` (o `TestClient` usa o `httpx` por baixo).
 
@@ -558,6 +626,8 @@ Dependências necessárias no `requirements.txt`: `pytest` e `httpx` (o `TestCli
 | `test_tempo_no_ar_maior_que_zero` | O tempo no ar em segundos é maior que zero |
 | `test_gerar_chave_aumenta_espaco_disco` | Gerar uma chave aumenta os bytes ocupados no disco (`>`, porque o tamanho exato varia) |
 
+> 🐛 O `test_gerar_chave_aumenta_espaco_disco` procurava a chave `"byes"` em vez de `"bytes"` e dava `KeyError`. Corrigido. O bug já existia antes da tela, e apareceu ao rodar a suíte para validá-la.
+
 ### Padrões usados
 
 - **Chamadas encadeadas:** a resposta de uma rota alimenta a próxima (ex.: a assinatura do `/assinar` vai pro `/verificar`).
@@ -573,7 +643,7 @@ Dependências necessárias no `requirements.txt`: `pytest` e `httpx` (o `TestCli
 - **Conferir que algo DÁ erro:** `with pytest.raises(AttributeSensitive):` só passa se o código de dentro estourar essa exceção.
 - **Falar direto com o cofre:** quando nenhuma rota faz o que o teste precisa (como tentar ler a privada), o teste abre `sessao_hsm()` sozinho. Tudo que usa a sessão fica **dentro** do `with`.
 - **Nonce errado de verdade:** em vez de inventar um texto qualquer (que nem seria base64 válido), o teste usa o nonce de uma segunda cifragem. Assim ele é válido, mas pertence à mensagem errada, e o teste prova que o GCM detecta isso.
-- **Depurar `KeyError`:** quando `resposta.json()["campo"]` dá `KeyError`, a rota devolveu erro em vez de sucesso, ou o nome do campo não bate com o `return` da rota. Um `print(resposta.status_code, resposta.json())` antes mostra o que veio.
+- **Depurar `KeyError`:** quando `resposta.json()["campo"]` dá `KeyError`, a rota devolveu erro em vez de sucesso, ou o nome do campo não bate com o `return` da rota (como no caso do `"byes"`). Um `print(resposta.status_code, resposta.json())` antes mostra o que veio.
 - **Depurar `500`:** o `/docs` só mostra "Internal Server Error". O motivo real fica no **final** do traceback no terminal (traceback se lê de baixo pra cima). Um `ResponseValidationError` com `input: None` quer dizer que a rota esqueceu o `return`.
 
 ---
@@ -596,13 +666,21 @@ Dependências necessárias no `requirements.txt`: `pytest` e `httpx` (o `TestCli
 - **Partição (HSM):** área isolada dentro do cofre, com chaves, PIN e usuários próprios, como apartamentos num prédio.
 - **Chave secreta (`SECRET_KEY`):** no PKCS#11, chave simétrica (AES) não é privada nem pública, é "secreta".
 - **Menor privilégio:** a chave só recebe as permissões de que precisa (`ENCRYPT`/`DECRYPT` para AES, `SIGN`/`VERIFY` para RSA).
-- **Tupla e desempacotamento:** uma função que faz `return a, b` devolve uma tupla, que pode ser recebida direto em duas variáveis: `x, y = funcao()`.
+- **Tupla e desempacotamento:** uma função que faz `return a, b` devolve uma tupla, que pode ser recebida direto em duas variáveis: `x, y = funcao()`. Se uma das partes não for usada, o nome começa com `_` (`publica, _privada = ...`).
 - **Escopo local:** uma variável criada dentro de uma função só existe ali, então duas rotas podem usar o mesmo nome de variável sem conflito.
 - **Middleware:** código que roda em toda requisição, antes e depois da rota, sem precisar mexer em cada rota.
 - **Código no topo do módulo:** roda uma vez só, no primeiro `import`. Bom lugar para guardar a hora de subida.
 - **Memória (RAM) vs disco:** o que está em variável some quando o programa para; o que está em arquivo continua.
 - **Schemas aninhados:** um modelo Pydantic pode ter outros modelos como campos (`disco: Disco`), formando um JSON em camadas.
-- **`GET` não empurra dados:** a rota só responde quando é chamada. Atualização periódica é responsabilidade de quem consome.
+- **`GET` não empurra dados:** a rota só responde quando é chamada. Atualização periódica é responsabilidade de quem consome, e a tela do painel é esse consumidor.
+- **Arquivos estáticos:** HTML, JS e CSS entregues como estão, sem processamento. O `StaticFiles` serve uma pasta inteira a partir de um caminho.
+- **Ordem das rotas:** um mount em `/` aceita qualquer caminho, então precisa vir depois das rotas da API.
+- **Mesma origem e CORS:** o navegador bloqueia uma página de pedir dados a outra origem sem permissão. Servindo a tela pela própria API, as duas ficam na mesma origem.
+- **Caminho ancorado no arquivo:** `Path(__file__)` aponta para o próprio arquivo e não depende de onde o programa foi executado. Caminho relativo depende.
+- **`fetch` + `async`/`await`:** o mesmo padrão do middleware em Python (`resposta = await call_next(request)`), agora no navegador: `const resposta = await fetch(...)`.
+- **`setInterval`:** repete uma função a cada X **milissegundos**. Recebe a função **sem parênteses**, para chamá-la depois, em vez de chamá-la na hora.
+- **`try/catch`:** o `try/except` do JavaScript. O que fica depois de uma linha que falhou dentro do `try` não é executado.
+- **Separar fixo de variável:** no HTML, só o que muda ganha `id`. O rótulo e o valor ficam em elementos diferentes.
 
 ---
 
@@ -641,6 +719,19 @@ Dependências necessárias no `requirements.txt`: `pytest` e `httpx` (o `TestCli
 - [x] Testes em `tests/test_monitoramento.py` (5 testes) rodando
 - [x] Entrega 2: comparação com o requisito original e perguntas para quem escreveu o requisito
 
+### Tela do painel
+
+- [x] Pasta `screen/` separada do `src/`, com HTML e JavaScript puro
+- [x] Página servida pela API em `localhost:8000/` com `StaticFiles`
+- [x] Quatro números com rótulo
+- [x] Atualização automática a cada 10s, sem recarregar
+- [x] Hora da última atualização
+- [x] Aviso de conexão perdida, com os números apagados
+- [x] Rotas da API continuando a funcionar
+- [x] `ruff check src/ tests/` limpo
+- [x] `pytest`: 11 passed sem Docker (os 7 do cofre dependem do container)
+- [ ] CSS
+
 ### Limitações conhecidas
 
 - Chamar `/rsa` ou `/aes` (Parte 1) com um nome que **já existe** sobrescreve a chave anterior.
@@ -653,6 +744,10 @@ Dependências necessárias no `requirements.txt`: `pytest` e `httpx` (o `TestCli
 - **O monitoramento conta só as chaves em arquivo** (Parte 1). As chaves do cofre ficam de fora, pelo mesmo motivo acima.
 - **Os contadores do monitoramento zeram** quando a API reinicia (ficam em memória).
 - **Os testes `test_gerar_chave_aumenta_total` e `test_gerar_chave_aumenta_espaco_disco` usam nomes fixos.** Na segunda rodada do pytest a chave já existe e é sobrescrita, então o total e o disco não aumentam e o teste falha. É preciso apagar `testeMonitoramento` e `testeEspacoDisco` da pasta `chaves/` antes de rodar de novo (ou usar `uuid`, como nos testes do cofre).
+- **A tela infla o contador de operações:** o middleware conta toda requisição, inclusive `/`, `/script.js`, `/style.css`, `/favicon.ico` e o `/monitoramento` a cada 10s. Deixar a tela aberta faz o número subir sozinho. Uma saída seria o middleware ignorar essas rotas.
+- **`GET` em rota que só aceita `POST` devolve `404` em vez de `405`:** a rota recusa o método e o `StaticFiles` montado em `/` pega a requisição, procura um arquivo com esse caminho na `screen/` e não acha. Pelo método certo (pelo `/docs`, por exemplo) tudo funciona.
+- **O `fetch` só cai no `catch` quando a rede falha.** Se a API estiver de pé mas devolver um erro (`500`, por exemplo), a tela não trata como "sem conexão". Conferir `resposta.ok` resolveria.
+- **O navegador pede `/favicon.ico`** e recebe `404`, porque a tela não tem ícone. Inofensivo.
 
 ---
 
