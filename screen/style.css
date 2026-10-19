@@ -1,13 +1,28 @@
+body{
+    padding: 2%;
+    background-color: rgb(103, 255, 166);
+}
+
 .cabecalho {
+    margin: 0 auto;
+    width: 500px;
+    padding: 1%;
     text-align: center;
+    background-color: white;
+    border: 2px solid black;
+}
+
+.titulo{
+    font-style: italic;
+    color: black;
 }
 
 .containerMonitoramento {
     text-align: center;
     display: grid;
-    grid-template-columns: 1fr, 1fr, 1fr, 1fr;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
     grid-template-rows: 1fr;
-    padding: 2%;
+    padding: 1%;
     gap: 1%;
 }
 
@@ -15,9 +30,16 @@
 .dado2,
 .dado3,
 .dado4 {
-    padding: 2%;
+    padding: 1%;
+    border: 2px solid black;
+    background-color: white;
 }
 
 .rodape {
+    margin: 0 auto;
+    width: 200px;
     text-align: center;
+    padding: 1%;
+    background-color: white;
+    border: 2px solid black;
 }
