@@ -18,18 +18,22 @@ body{
 }
 
 .containerMonitoramento {
+    margin: 0 auto;
+    width: 1000px;
     text-align: center;
     display: grid;
     grid-template-columns: 1fr 1fr 1fr 1fr;
     grid-template-rows: 1fr;
+    gap: 2%;
     padding: 1%;
-    gap: 1%;
 }
 
 .dado1,
 .dado2,
 .dado3,
 .dado4 {
+    margin: 0 auto;
+    width: 200px;
     padding: 1%;
     border: 2px solid black;
     background-color: white;
