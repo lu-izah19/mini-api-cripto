@@ -1,13 +1,13 @@
 from contextlib import contextmanager
 import os
 import pkcs11
+from config import PIN
 from pkcs11.mechanisms import GCMParams
 from pkcs11 import Attribute, KeyType, ObjectClass
 from pkcs11 import Mechanism
 
 CAMINHO_BIBLIOTECA = "/usr/lib/softhsm/libsofthsm2.so"
 LABEL_TOKEN = "cofre-treino"
-PIN = "5678"
 
 
 @contextmanager
