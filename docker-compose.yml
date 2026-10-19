@@ -3,6 +3,9 @@ services:
     build: .
     ports:
       - "8000:8000"
+    environment:
+      - LIMITE_CHAVES=5
+      - PIN=5678
     volumes:
       - ./src:/app/src
       - ./tests:/app/tests
