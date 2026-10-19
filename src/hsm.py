@@ -1,6 +1,7 @@
 from contextlib import contextmanager
 import os
 import pkcs11
+from pkcs11.mechanisms import GCMParams
 from pkcs11 import Attribute, KeyType, ObjectClass
 from pkcs11 import Mechanism
 
@@ -94,7 +95,7 @@ def cifrar_aes_no_cofre(label: str, texto: str):
         )
         nonce = os.urandom(12)
         return chave_aes.encrypt(
-            texto.encode(), mechanism=Mechanism.AES_GCM, mechanism_param=(nonce, b"", 128)
+            texto.encode(), mechanism=Mechanism.AES_GCM, mechanism_param=GCMParams(nonce)
         ), nonce
 
 def decifrar_aes_no_cofre(label: str, cifrado: bytes, nonce: bytes):
@@ -104,7 +105,7 @@ def decifrar_aes_no_cofre(label: str, cifrado: bytes, nonce: bytes):
             label=label,
         )
         return chave_aes.decrypt(
-            cifrado, mechanism=Mechanism.AES_GCM, mechanism_param=(nonce, b"", 128)
+            cifrado, mechanism=Mechanism.AES_GCM, mechanism_param=GCMParams(nonce)
         ).decode()
     
 
