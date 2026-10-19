@@ -37,7 +37,7 @@ def test_tempo_no_ar_maior_que_zero():
     assert segundos > 0
 
 def test_gerar_chave_aumenta_espaco_disco():
-    antes = client.get("/monitoramento").json()["disco"]["byes"]
+    antes = client.get("/monitoramento").json()["disco"]["bytes"]
 
     client.post("chaves/rsa", json={"nome": "testeEspacoDisco"})
 
