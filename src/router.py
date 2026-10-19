@@ -37,8 +37,8 @@ def assinar(dados: AssinarRequest):
         assinatura = privada.sign(texto_bytes, padding.PSS(
         mgf=padding.MGF1(hashes.SHA256()),
         salt_length=padding.PSS.MAX_LENGTH), hashes.SHA256())
-        assinatura_b64 = base64.b64encode(assinatura).decode("utf-8")
-        return {"assinatura": assinatura_b64}
+        texto_assinado_b64 = base64.b64encode(assinatura).decode("utf-8")
+        return {"assinatura": texto_assinado_b64}
     except FileNotFoundError:
         raise HTTPException(
             status_code=404, detail="Chave privada não encontrada. Gere o par de chaves primeiro."
