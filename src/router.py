@@ -9,14 +9,25 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from hsm import sessao_hsm, gerar_par_no_cofre, assinar_no_cofre, verificar_no_cofre
 from hsm import gerar_aes_no_cofre, cifrar_aes_no_cofre, decifrar_aes_no_cofre
 from pkcs11 import Attribute, ObjectClass
+from config import LIMITE_CHAVES
+from metricas import contar_chaves
 
 router = APIRouter(prefix="/chaves", tags=["chaves"])
 os.makedirs("chaves", exist_ok=True)
+
+def verificar_limite():
+    total, rsa, aes = contar_chaves()
+    if total >= LIMITE_CHAVES:
+        raise HTTPException(
+            status_code= 507,
+            detail=f"Limite de {LIMITE_CHAVES} chaves atingido. Existem {total} chaves, por isso a criação foi recusada."
+        )
 
 # _______________Parte 1_____________________________
 
 @router.post("/rsa")
 def gerar_par_de_chaves(dados: GerarChaveRequest):
+    verificar_limite()
     privada = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     publica = privada.public_key()
     privada_pem = privada.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
@@ -62,6 +73,7 @@ def verificar(dados: VerificarRequest):
 
 @router.post("/aes")
 def gerar_chave_aes(dados: GerarChaveRequest):
+    verificar_limite()
     chave_aes = os.urandom(32) 
     with open(f"chaves/{dados.nome}_aes.key", "wb") as chave_arquivo:
         chave_arquivo.write(chave_aes)
