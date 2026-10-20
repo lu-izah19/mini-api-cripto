@@ -8,6 +8,7 @@ async function buscarDados() {
     document.getElementById("operacoes").textContent = dados.operacoes.total;
     document.getElementById("tempoNoAr").textContent = dados.tempo.legivel;
     document.getElementById("limite").textContent = `${dados.limite.usado} / ${dados.limite.maximo}`;
+    document.getElementById("limite").classList.toggle("acima-do-limite", dados.limite.usado > dados.limite.maximo);
     document.getElementById("status").textContent = "conectado";
     document.getElementById("ultimaAtualizacao").textContent =
       new Date().toLocaleTimeString("pt-BR");
@@ -18,6 +19,7 @@ async function buscarDados() {
     document.getElementById("operacoes").textContent = "--";
     document.getElementById("tempoNoAr").textContent = "--";
     document.getElementById("limite").textContent = "--";
+    document.getElementById("limite").classList.remove("acima-do-limite");
   }
 }
 
