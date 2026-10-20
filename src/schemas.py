@@ -45,8 +45,13 @@ class Tempo_no_ar(BaseModel):
     segundos: int
     legivel: str
 
+class Limite(BaseModel):
+    maximo: int
+    usado: int 
+
 class MonitoramentoResponse(BaseModel):
     disco: Disco
     chave: Chave 
     operacoes: Operacoes
     tempo: Tempo_no_ar
+    limite: Limite
