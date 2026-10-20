@@ -22,7 +22,7 @@ body{
     width: 1000px;
     text-align: center;
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr 1fr;
+    grid-template-columns: 1fr 1fr 1fr 1fr 1fr;
     grid-template-rows: 1fr;
     gap: 2%;
     padding: 1%;
@@ -31,7 +31,8 @@ body{
 .dado1,
 .dado2,
 .dado3,
-.dado4 {
+.dado4, 
+.dado5 {
     margin: 0 auto;
     width: 200px;
     padding: 1%;
