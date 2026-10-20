@@ -7,6 +7,7 @@ async function buscarDados() {
     document.getElementById("disco").textContent = dados.disco.legivel;
     document.getElementById("operacoes").textContent = dados.operacoes.total;
     document.getElementById("tempoNoAr").textContent = dados.tempo.legivel;
+    document.getElementById("limite").textContent = `${dados.limite.usado} / ${dados.limite.maximo}`;
     document.getElementById("status").textContent = "conectado";
     document.getElementById("ultimaAtualizacao").textContent =
       new Date().toLocaleTimeString("pt-BR");
@@ -16,6 +17,7 @@ async function buscarDados() {
     document.getElementById("disco").textContent = "--";
     document.getElementById("operacoes").textContent = "--";
     document.getElementById("tempoNoAr").textContent = "--";
+    document.getElementById("limite").textContent = "--";
   }
 }
 
