@@ -15,12 +15,19 @@ from metricas import contar_chaves
 router = APIRouter(prefix="/chaves", tags=["chaves"])
 os.makedirs("chaves", exist_ok=True)
 
+def contar_total_geral():
+    total, _rsa, _aes = contar_chaves()
+    quantiade = len(listar_chaves_cofre())
+    numero_de_chaves = total + quantiade
+    return numero_de_chaves
+
 def verificar_limite():
-    total, rsa, aes = contar_chaves()
-    if total >= LIMITE_CHAVES:
+    numero_de_chaves =  contar_total_geral()
+    if numero_de_chaves >= LIMITE_CHAVES:
         raise HTTPException(
             status_code= 507,
-            detail=f"Limite de {LIMITE_CHAVES} chaves atingido. Existem {total} chaves, por isso a criação foi recusada."
+            detail=f"Limite de {LIMITE_CHAVES} chaves atingido. "
+            f"Existem {numero_de_chaves} chaves, por isso a criação foi recusada."
         )
 
 # _______________Parte 1_____________________________
@@ -128,6 +135,7 @@ def listar_chaves_cofre():
 
 @router.post("/cofre/rsa")
 def gerar_par_RSA_no_cofre(dados: GerarChaveRequest):
+    verificar_limite()
     chave_cofre = gerar_par_no_cofre(dados.nome)
     chave_publica = base64.b64encode(chave_cofre).decode("utf-8")  
     return {"chave_publica": chave_publica}
@@ -145,6 +153,7 @@ def verificar_assinatura_no_cofre(dados: VerificarRequest):
 
 @router.post("/cofre/aes")
 def gerar_chave_AES_no_cofre(dados: GerarChaveRequest):
+    verificar_limite()
     gerar_aes_no_cofre(dados.nome)
     return {"message": "Chave AES gerada com sucesso"}
 
