@@ -1,9 +1,10 @@
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-
+from router import router, contar_total_geral
+from config import LIMITE_CHAVES
 import metricas
-from router import router
-from schemas import Chave, Disco, MonitoramentoResponse, Operacoes, Tempo_no_ar
+from schemas import Chave, Disco, MonitoramentoResponse, Operacoes, Tempo_no_ar, Limite
+
 
 app = FastAPI(title="Mini API de criptografia")
 app.include_router(router)
@@ -24,6 +25,8 @@ def monitoramento():
     total, rsa, aes = metricas.contar_chaves()
     bytes, disco_legivel = metricas.tamanho_em_bytes()
     tempo_legivel, diferenca = metricas.tempo_execucao()
+    maximo = LIMITE_CHAVES
+    usado = contar_total_geral()
 
     return MonitoramentoResponse(
         chave=Chave(total=total, rsa=rsa, aes=aes),
@@ -33,6 +36,7 @@ def monitoramento():
         ),
         disco=Disco(bytes=bytes, legivel=disco_legivel),
         tempo=Tempo_no_ar(segundos=diferenca, legivel=tempo_legivel),
+        limite=Limite(maximo= maximo, usado= usado),
     )
 
 app.mount("/", StaticFiles(directory="screen", html=True), name="painel")
