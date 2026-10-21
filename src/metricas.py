@@ -1,11 +1,11 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-inicio = datetime.now(timezone.utc)
+inicio = datetime.now(UTC)
 PASTA_CHAVES = Path("chaves")
 
 def tempo_execucao():
-    agora = datetime.now(timezone.utc)
+    agora = datetime.now(UTC)
     diferenca = agora - inicio
     diferenca = int(diferenca.total_seconds())
 

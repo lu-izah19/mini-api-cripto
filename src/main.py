@@ -1,10 +1,11 @@
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from router import router, contar_total_geral
-from config import LIMITE_CHAVES
-import metricas
-from schemas import Chave, Disco, MonitoramentoResponse, Operacoes, Tempo_no_ar, Limite
 
+import metricas
+from config import LIMITE_CHAVES
+from hsm import CofreIndisponivel
+from router import contar_total_geral, router
+from schemas import Chave, Disco, Limite, MonitoramentoResponse, Operacoes, Tempo_no_ar
 
 app = FastAPI(title="Mini API de criptografia")
 app.include_router(router)
@@ -26,9 +27,15 @@ def monitoramento():
     bytes, disco_legivel = metricas.tamanho_em_bytes()
     tempo_legivel, diferenca = metricas.tempo_execucao()
     maximo = LIMITE_CHAVES
-    usado = contar_total_geral()
+    try:
+        usado = contar_total_geral()
+        cofre_disponivel = True
+    except CofreIndisponivel:
+        usado = None
+        cofre_disponivel = False
 
     return MonitoramentoResponse(
+        cofre_disponivel=cofre_disponivel,
         chave=Chave(total=total, rsa=rsa, aes=aes),
         operacoes=Operacoes(
             total=metricas.total_operacoes,

@@ -6,11 +6,9 @@ Na **Parte 2**, as chaves deixam de ficar em arquivo e passam a viver dentro de 
 
 No **RF-08**, a API ganhou um **painel de monitoramento** (`GET /monitoramento`) que mostra quantas chaves existem, quantas operações foram feitas, quanto espaço as chaves ocupam no disco e há quanto tempo a API está no ar.
 
-O painel ganhou uma **tela**: uma página em **HTML e JavaScript puro**, servida pela própria API em `http://localhost:8000/`, que consome a `/monitoramento` e se atualiza sozinha a cada 10 segundos.
+Por fim, o painel ganhou uma **tela**: uma página em **HTML e JavaScript puro**, servida pela própria API em `http://localhost:8000/`, que consome a `/monitoramento` e se atualiza sozinha a cada 10 segundos.
 
-Por fim, no **RF-07**, a API ganhou um **limite máximo de chaves**, configurável por variável de ambiente. Quando o limite é atingido, a criação de novas chaves é recusada, e o painel mostra quanto do limite já foi usado.
-
-Projeto de estudo desenvolvido durante o estágio de back-end na CERMOB Tecnologia. **Status: ✅ finalizado** (faltam os testes das mudanças do RF-07).
+Projeto de estudo desenvolvido durante o estágio de back-end na CERMOB Tecnologia. **Status: ✅ finalizado** (falta só o CSS da tela).
 
 ---
 
@@ -21,9 +19,8 @@ Projeto de estudo desenvolvido durante o estágio de back-end na CERMOB Tecnolog
 | Linguagem | Python 3 |
 | Framework | FastAPI + Uvicorn |
 | Criptografia | [`cryptography`](https://cryptography.io/) |
-| Cofre (HSM) | SoftHSM2 + [`python-pkcs11`](https://python-pkcs11.readthedocs.io/) 0.10.0 |
+| Cofre (HSM) | SoftHSM2 + [`python-pkcs11`](https://python-pkcs11.readthedocs.io/) |
 | Validação | Pydantic |
-| Configuração | Variáveis de ambiente (`LIMITE_CHAVES`, `PIN`) |
 | Tela do painel | HTML + JavaScript puro (sem framework, sem biblioteca de CSS) |
 | Container | Docker + Docker Compose |
 | Testes | pytest + `TestClient` + httpx |
@@ -36,10 +33,9 @@ Projeto de estudo desenvolvido durante o estágio de back-end na CERMOB Tecnolog
 .
 ├── src/
 │   ├── main.py          # instancia o FastAPI, inclui o router, middleware de contagem, rotas /saude e /monitoramento e serve a tela
-│   ├── router.py        # rotas da API (Parte 1 e Parte 2), com prefixo /chaves, e as funções do limite de chaves
+│   ├── router.py        # rotas da API (Parte 1 e Parte 2), com prefixo /chaves
 │   ├── schemas.py       # modelos Pydantic de request e da resposta do monitoramento
 │   ├── metricas.py      # métricas do monitoramento: tempo no ar, operações, chaves e disco
-│   ├── config.py        # lê as variáveis de ambiente (LIMITE_CHAVES e PIN)
 │   └── hsm.py           # funções que conversam com o cofre (PKCS#11)
 ├── screen/              # tela do painel (front-end), separada do Python
 │   ├── index.html       # estrutura da página: rótulos fixos e spans com id para os valores
@@ -51,8 +47,8 @@ Projeto de estudo desenvolvido durante o estágio de back-end na CERMOB Tecnolog
 │   └── test_monitoramento.py  # testes do painel de monitoramento (RF-08)
 ├── chaves/              # chaves geradas na Parte 1 (criada automaticamente, NÃO vai pro repositório)
 ├── .gitignore
-├── Dockerfile           # copia o src/ e a screen/ para dentro do container
-├── docker-compose.yml   # define LIMITE_CHAVES e PIN em environment
+├── Dockerfile
+├── docker-compose.yml
 ├── requirements.txt
 └── README.md
 ```
@@ -68,7 +64,7 @@ Projeto de estudo desenvolvido durante o estágio de back-end na CERMOB Tecnolog
 **Pré-requisitos:** Docker e Docker Compose.
 
 ```bash
-# primeira vez (ou depois de mexer no requirements.txt ou no Dockerfile)
+# primeira vez (ou depois de mexer no requirements.txt)
 docker compose up --build
 
 # nas próximas vezes
@@ -78,19 +74,6 @@ docker compose up -d
 O Uvicorn observa a pasta `/app`, então qualquer alteração no código recarrega a API sozinha.
 
 Para conferir se está de pé: `docker compose ps` (o container deve aparecer como `Running`) ou abrir o Swagger.
-
-> 📦 O `Dockerfile` precisa copiar a pasta `screen/` para dentro do container. Sem isso, a API não sobe e mostra `RuntimeError: Directory 'screen' does not exist`.
-
-### Variáveis de ambiente
-
-Ficam no `docker-compose.yml`, em `environment`, e são lidas pelo `src/config.py`.
-
-| Variável | O que é | Valor no `docker-compose.yml` | Padrão (se não existir) |
-|---|---|---|---|
-| `LIMITE_CHAVES` | Número máximo de chaves (arquivos + cofre) | `5` | `10` |
-| `PIN` | Senha do token do cofre | `5678` | `"5678"` |
-
-Se a variável não estiver definida, a API usa o valor padrão e sobe normalmente.
 
 ### Sem Docker (Windows)
 
@@ -147,8 +130,6 @@ Gera um par de chaves RSA-2048 e salva os dois arquivos em formato **PEM**.
 ```json
 { "message": "Par de chaves RSA gerado com sucesso" }
 ```
-
-**Erros:** `507` se o limite de chaves foi atingido (ver RF-07).
 
 ---
 
@@ -211,8 +192,6 @@ Gera uma chave AES-256 (32 bytes aleatórios com `os.urandom`).
 ```json
 { "message": "Chave AES gerada com sucesso" }
 ```
-
-**Erros:** `507` se o limite de chaves foi atingido (ver RF-07).
 
 ---
 
@@ -298,7 +277,7 @@ Na Parte 1, a chave mora num arquivo e o **Python** faz a conta. Na Parte 2, a c
 
 - **Biblioteca:** o arquivo `.so` que o Python carrega (`/usr/lib/softhsm/libsofthsm2.so`). É a porta de entrada.
 - **Token:** o cofre em si, identificado por um **label** (`cofre-treino`).
-- **PIN:** a senha do token. Vem da variável de ambiente `PIN`, lida no `config.py`.
+- **PIN:** a senha do token.
 - **Sessão:** a conexão aberta com o token. Abre, trabalha, fecha.
 
 ### `src/hsm.py`
@@ -317,9 +296,7 @@ Na Parte 1, a chave mora num arquivo e o **Python** faz a conta. Na Parte 2, a c
 
 **Atributos da chave AES:** `TOKEN`, `PRIVATE`, `SENSITIVE: True`, `EXTRACTABLE: False` (nunca sai do cofre), `ENCRYPT` e `DECRYPT` (só pode cifrar e decifrar, nada além: **princípio do menor privilégio**).
 
-**Parâmetros do GCM no cofre:** `mechanism_param=GCMParams(nonce)`, com o IV de 12 bytes.
-
-> ⚠️ A `python-pkcs11` 0.10.0 **não aceita mais a tupla** `(nonce, b"", 128)` no `AES_GCM`: dá `TypeError` sem mensagem nenhuma. A documentação oficial ainda diz que o AES_GCM não é suportado, mas a classe `GCMParams` existe nessa versão (confirmado no código-fonte da biblioteca).
+**Parâmetros do GCM no cofre:** `mechanism_param=(nonce, b"", 128)`, ou seja, o IV de 12 bytes, dados adicionais autenticados vazios e tag de **128 bits** (16 bytes).
 
 ### O papel das rotas
 
@@ -353,7 +330,7 @@ Lista as chaves RSA que estão dentro do cofre, com label e tipo. Percorre os ob
 ]
 ```
 
-> ℹ️ O filtro busca `ObjectClass.PRIVATE_KEY`, então chaves AES (que são `SECRET_KEY`) não aparecem na lista. Essa função também é usada na contagem do limite de chaves (ver RF-07).
+> ℹ️ O filtro busca `ObjectClass.PRIVATE_KEY`, então chaves AES (que são `SECRET_KEY`) não aparecem na lista.
 
 ---
 
@@ -373,8 +350,6 @@ Gera um par RSA-2048 **dentro do cofre**. A privada fica lá; a resposta traz s�
 { "chave_publica": "u7Hq...==" }
 ```
 
-**Erros:** `507` se o limite de chaves foi atingido (ver RF-07).
-
 ---
 
 #### `POST /chaves/cofre/assinar`
@@ -388,10 +363,10 @@ Pede ao cofre para assinar o texto com a privada guardada lá.
 
 **Resposta**
 ```json
-{ "texto_assinado": "kj3h2K...==" }
+{ "assinatura": "kj3h2K...==" }
 ```
 
-O valor de `texto_assinado` é o que vai no campo `assinatura_b64` do `/cofre/verificar`.
+O campo tem o mesmo nome da `/assinar` da Parte 1. O valor de `assinatura` é o que vai no campo `assinatura_b64` do `/cofre/verificar`.
 
 ---
 
@@ -433,8 +408,6 @@ Gera uma chave AES-256 dentro do cofre. Como a chave é `SENSITIVE` e não `EXTR
 { "message": "Chave AES gerada com sucesso" }
 ```
 
-**Erros:** `507` se o limite de chaves foi atingido (ver RF-07).
-
 ---
 
 #### `POST /chaves/cofre/cifrar`
@@ -475,40 +448,6 @@ Decifra dentro do cofre. A rota só converte o base64 de volta para bytes; o tex
 
 ---
 
-## 🚧 Limite máximo de chaves (RF-07)
-
-A API tem um número máximo de chaves, definido pela variável de ambiente `LIMITE_CHAVES`. Quando o limite é atingido, as rotas que criam chaves recusam o pedido com **507**:
-
-```json
-{ "detail": "Limite de 5 chaves atingido. Existem 5 chaves, por isso a criação foi recusada." }
-```
-
-### Como funciona (`src/router.py`)
-
-| Função | O que faz |
-|---|---|
-| `contar_total_geral()` | Soma as chaves em arquivo (`contar_chaves()`, do `metricas.py`) com as chaves do cofre (`len(listar_chaves_cofre())`) e devolve o total |
-| `verificar_limite()` | Chama a `contar_total_geral()` e, se o total for `>=` ao `LIMITE_CHAVES`, lança `HTTPException` com status `507` |
-
-O `verificar_limite()` é a **primeira linha** das quatro rotas que criam chaves: `/chaves/rsa`, `/chaves/aes`, `/chaves/cofre/rsa` e `/chaves/cofre/aes`. Se viesse depois, a chave já estaria criada quando o erro estourasse.
-
-### Decisões
-
-| # | Pergunta | Decisão | Por quê |
-|---|---|---|---|
-| 1 | Limite e PIN no código ou fora dele? | **Variáveis de ambiente**, lidas no `config.py` | Muda o valor sem mexer no código. O `config.py` é separado para evitar import circular entre `main.py` e `router.py` |
-| 2 | `os.getenv` ou `os.environ[...]`? | **`os.getenv` com valor padrão** | O `os.environ` quebra com `KeyError` se a variável não existir |
-| 3 | Converter com `int()`? | **Só o limite** | Variável de ambiente sempre chega como texto. O PIN continua texto porque um PIN como `"0123"` viraria `123` |
-| 4 | PIN com valor padrão? | **Sim, `"5678"`** | É um cofre de treino, e o padrão facilita subir o projeto |
-| 5 | `>` ou `>=`? | **`>=`** | Com limite 5 e 5 chaves, a sexta é recusada. Com `>` passariam 6 |
-| 6 | Qual status de erro? | **507 Insufficient Storage** | Descreve "não cabe mais chave". O 409 Conflict também foi considerado, já que 5xx costuma indicar falha do servidor |
-| 7 | Par RSA conta como 1 ou 2? | **1** (mantendo o RF-08) | Nos arquivos, só o `_privada.pem` é contado; no cofre, só os objetos `PRIVATE_KEY` |
-| 8 | O limite vale só para arquivos? | **Não, arquivos e cofre juntos** | Um limite que vale só para metade das chaves vira bagunça |
-| 9 | Onde fica a contagem total? | **Numa função só, `contar_total_geral()`, no `router.py`** | O `verificar_limite()` e o `/monitoramento` usam a mesma função, então a API e o painel nunca mostram números diferentes. Não fica no `metricas.py` porque precisa da `listar_chaves_cofre()`, e o `metricas.py` importar o `router.py` criaria import circular |
-| 10 | E se o limite já foi ultrapassado? (ex.: `LIMITE_CHAVES` baixou de 10 para 5 com 8 chaves criadas) | **Só recusar novas chaves e avisar no painel** | As chaves existentes continuam funcionando. Bloquear outras operações pararia a API por causa de uma configuração, e apagar chaves automaticamente deixaria dados cifrados impossíveis de abrir |
-
----
-
 ## 📊 Monitoramento (RF-08)
 
 ### `GET /monitoramento`
@@ -521,14 +460,11 @@ Painel com o estado atual da API. Fica no `main.py`, e **não** no `router.py`: 
   "disco":     { "bytes": 6593, "legivel": "6.44 KB" },
   "chave":     { "total": 7, "rsa": 3, "aes": 4 },
   "operacoes": { "total": 4, "rota": { "/docs": 1, "/openapi.json": 1, "/monitoramento": 1, "/": 1 } },
-  "tempo":     { "segundos": 30, "legivel": "0h 0min 30s" },
-  "limite":    { "maximo": 5, "usado": 3 }
+  "tempo":     { "segundos": 30, "legivel": "0h 0min 30s" }
 }
 ```
 
-A resposta é validada por `MonitoramentoResponse`, um schema que junta cinco schemas menores: `Chave`, `Operacoes`, `Disco`, `Tempo_no_ar` e `Limite`.
-
-> ℹ️ O bloco `chave` conta **só as chaves em arquivo**. O `limite.usado` conta **arquivos + cofre**, porque é o mesmo número que o `verificar_limite()` usa. Por isso o limite tem um bloco próprio em vez de ficar dentro de `chave`: misturar os dois confundiria o que o `chave.total` significa.
+A resposta é validada por `MonitoramentoResponse`, um schema que junta quatro schemas menores: `Chave`, `Operacoes`, `Disco` e `Tempo_no_ar`.
 
 ### Como cada métrica é calculada (`src/metricas.py`)
 
@@ -538,7 +474,6 @@ A resposta é validada por `MonitoramentoResponse`, um schema que junta cinco sc
 | Operações | Um **middleware** no `main.py` registra o caminho de toda requisição antes de repassar para a rota (`call_next`). Conta o total e por rota | memória |
 | Chaves | Conta os arquivos da pasta `chaves/` pelo padrão do nome (`_privada.pem` = RSA, `_aes.key` = AES) | disco |
 | Disco | Soma o tamanho dos arquivos de chave com `pathlib` + `stat()` | disco |
-| Limite | `maximo` vem do `LIMITE_CHAVES`; `usado` vem da `contar_total_geral()`, do `router.py` | variável de ambiente + disco + cofre |
 
 ### Decisões
 
@@ -547,7 +482,6 @@ A resposta é validada por `MonitoramentoResponse`, um schema que junta cinco sc
 | 1 | Um par RSA conta como 1 ou 2 chaves? | **1** | Pública e privada são as duas metades de uma mesma chave, geradas juntas numa única chamada |
 | 2 | A `/monitoramento` conta ela mesma? | **Sim** (previsto e confirmado) | O middleware registra **antes** do `call_next`. Na primeira chamada depois de reiniciar, o total já vem `1` |
 | 3 | O que acontece com os números quando a API reinicia? | Operações e tempo no ar **zeram**; chaves e disco **continuam** | Os dois primeiros ficam em variáveis (RAM); os dois últimos vêm de arquivos (disco). Um histórico exigiria salvar o contador em arquivo ou banco |
-| 4 | Onde mostrar o limite na resposta? | **Num bloco próprio, `limite`** | O `chave.total` continua significando só as chaves em arquivo |
 
 > 👀 Abrir o `/docs` no navegador conta **2 operações a mais** (`/docs` e `/openapi.json`), porque o próprio navegador faz essas requisições para montar a página.
 
@@ -567,7 +501,7 @@ A resposta é validada por `MonitoramentoResponse`, um schema que junta cinco sc
 
 Na Entrega 2 ficou registrado que atualizar a cada 60 segundos é responsabilidade de **quem consome** a API, não da rota. A tela é esse consumidor.
 
-Abre em `http://localhost:8000/` e mostra chaves, operações, disco, tempo no ar e o uso do limite, cada um com rótulo, além do **status da conexão** e da **hora da última atualização**.
+Abre em `http://localhost:8000/` e mostra chaves, operações, disco e tempo no ar, cada um com rótulo, além do **status da conexão** e da **hora da última atualização**.
 
 ### Como a API entrega a página
 
@@ -582,7 +516,6 @@ app.mount("/", StaticFiles(directory=PASTA_SCREEN, html=True), name="painel")
 - **`html=True`:** quando alguém pede `/`, entrega o `index.html` automaticamente.
 - **O mount fica no final do `main.py`**, depois do router e das rotas. Montado em `/`, ele aceita qualquer caminho; se viesse antes, engoliria `/docs`, `/monitoramento` e as rotas `/chaves/...`.
 - **O caminho é ancorado no próprio `main.py`** (`Path(__file__)`). Com o caminho relativo `"screen"`, a API não encontrava a pasta dependendo de onde o uvicorn era executado.
-- **No Docker, o `Dockerfile` precisa copiar a pasta `screen/`** para dentro do container. Sem isso, a API não sobe (`Directory 'screen' does not exist`).
 - **Por que servir pela API, e não abrir o arquivo com dois cliques:** aberto como arquivo, a página fica em outra origem e o navegador bloqueia o `fetch` por **CORS**. Servida pela API, página e rota estão na mesma origem, e o `fetch("/monitoramento")` usa só o caminho.
 
 ### Como a tela funciona (`screen/script.js`)
@@ -592,19 +525,11 @@ app.mount("/", StaticFiles(directory=PASTA_SCREEN, html=True), name="painel")
 | `fetch("/monitoramento")` + `await` | Pede os dados para a API e espera a resposta |
 | `await resposta.json()` | Transforma a resposta em objeto JavaScript |
 | `getElementById(...).textContent` | Escreve cada valor no `span` correspondente (`dados.chave.total`, `dados.disco.legivel`...) |
-| Template string | O card do limite mostra dois valores juntos: `` `${dados.limite.usado} / ${dados.limite.maximo}` `` vira, por exemplo, `3 / 5` |
-| `classList.toggle("acima-do-limite", usado > maximo)` | Liga a classe vermelha no card do limite quando o uso passa do máximo, e desliga sozinha quando volta ao normal |
-| `try/catch` | Se a API não responder, cai no `catch`, que volta os valores para `--` e tira o vermelho do limite |
+| `try/catch` | Se a API não responder, cai no `catch` |
 | `buscarDados()` | Primeira chamada assim que a página abre, para não ficar com `--` esperando o primeiro intervalo |
 | `setInterval(buscarDados, 10000)` | Repete a cada 10 segundos, sem recarregar a página |
 
 **No HTML**, o texto fixo (rótulo) e o valor ficam em elementos separados: só o `span` do valor tem `id`, porque é a única coisa que o JavaScript troca. Antes do primeiro dado chegar, os valores mostram `--`, para a tela não exibir um `0` que pareceria real.
-
-### Visual (`screen/style.css`)
-
-- Os cards ficam num **grid de 4 colunas** no `.containerMonitoramento`. Com o card do limite, o quinto card cai numa linha nova.
-- O cabeçalho é centralizado com `margin: 0 auto`. O `text-align: center` só centraliza o texto de dentro, não a caixa.
-- A classe `.acima-do-limite` deixa o texto do card do limite em vermelho.
 
 ### Decisões da tela
 
@@ -613,8 +538,6 @@ app.mount("/", StaticFiles(directory=PASTA_SCREEN, html=True), name="painel")
 | 1 | De quanto em quanto tempo atualizar? | **10 segundos** | Chave e disco não mudam rápido, e o painel também conta como operação. Com 1 segundo, o contador subiu de 41 para 207 em cerca de 10 minutos |
 | 2 | Quando a hora da última atualização muda? | **Só quando o fetch dá certo** | Fica no final do `try`. Se a API cair, a hora congela e mostra quando foi o último dado válido |
 | 3 | O que fazer com os números quando a API cai? | **Apagar (voltar para `--`)** | Número velho com cara de atual leva quem olha a decidir com informação errada. O status muda para "sem conexão" e a hora continua mostrando quando foi o último dado bom |
-| 4 | Quando o card do limite fica vermelho? | **Só quando `usado > maximo`** | Com `usado` igual a `maximo` (ex.: `5 / 5`), o limite está cheio, mas a API está funcionando como deveria. Acima disso, o limite foi ultrapassado (ver RF-07, decisão 10) |
-| 5 | O vermelho fica quando a API cai? | **Não, o `catch` remove a classe** | Senão o `--` apareceria em vermelho, parecendo aviso de limite quando na verdade é falta de conexão |
 
 ### Verificação (manual)
 
@@ -623,9 +546,6 @@ app.mount("/", StaticFiles(directory=PASTA_SCREEN, html=True), name="painel")
 - [x] Derrubei a API e a tela avisou "sem conexão" e apagou os números
 - [x] Subi a API de novo e a tela voltou a atualizar sozinha
 - [x] `/monitoramento`, `/docs` e `/chaves/rsa` continuam respondendo
-- [x] Grid de 4 colunas aplicando no painel
-- [ ] Card do limite mostrando `usado / maximo`
-- [ ] Card do limite ficando vermelho acima do limite
 
 > 💡 **Mexeu no `script.js`? Recarregue com `Ctrl+Shift+R` com a API de pé.** A aba continua rodando a versão do JavaScript que baixou quando abriu, e o `setInterval` segue chamando essa cópia antiga. Com a API derrubada nem dá para recarregar, porque é ela quem entrega o arquivo.
 >
@@ -642,7 +562,6 @@ app.mount("/", StaticFiles(directory=PASTA_SCREEN, html=True), name="painel")
 | `404` | Chave com esse nome não existe (Parte 1), ou caminho que não é rota nem arquivo da `screen/` |
 | `422` | Request inválido (ex.: `nome` fora da allowlist) |
 | `500` | Erros não tratados nas rotas do cofre (ver Limitações) |
-| `507` | Limite de chaves atingido ao tentar criar uma chave nova (RF-07) |
 
 ---
 
@@ -709,8 +628,6 @@ Dependências necessárias no `requirements.txt`: `pytest` e `httpx` (o `TestCli
 
 > 🐛 O `test_gerar_chave_aumenta_espaco_disco` procurava a chave `"byes"` em vez de `"bytes"` e dava `KeyError`. Corrigido. O bug já existia antes da tela, e apareceu ao rodar a suíte para validá-la.
 
-> ⚠️ **Limite de chaves × testes:** com `LIMITE_CHAVES=5` no `docker-compose.yml`, os testes que criam chaves podem receber `507` em vez de `200` quando já existem 5 chaves (contando as que sobraram de rodadas anteriores e do Swagger). Ao rodar a suíte, limpe as chaves ou suba o limite.
-
 ### Padrões usados
 
 - **Chamadas encadeadas:** a resposta de uma rota alimenta a próxima (ex.: a assinatura do `/assinar` vai pro `/verificar`).
@@ -749,18 +666,12 @@ Dependências necessárias no `requirements.txt`: `pytest` e `httpx` (o `TestCli
 - **Partição (HSM):** área isolada dentro do cofre, com chaves, PIN e usuários próprios, como apartamentos num prédio.
 - **Chave secreta (`SECRET_KEY`):** no PKCS#11, chave simétrica (AES) não é privada nem pública, é "secreta".
 - **Menor privilégio:** a chave só recebe as permissões de que precisa (`ENCRYPT`/`DECRYPT` para AES, `SIGN`/`VERIFY` para RSA).
-- **Tupla e desempacotamento:** uma função que faz `return a, b` devolve uma tupla, que pode ser recebida direto em duas variáveis: `x, y = funcao()`. Se uma das partes não for usada, o nome começa com `_` (`publica, _privada = ...`). Usar `_` também evita que a variável esconda um módulo com o mesmo nome (como o `rsa` importado da `cryptography`).
-- **Escopo local:** uma variável criada dentro de uma função só existe ali, então duas rotas podem usar o mesmo nome de variável sem conflito. Para usar o valor fora, a função precisa devolver com `return`, e quem chama precisa guardar o resultado numa variável.
+- **Tupla e desempacotamento:** uma função que faz `return a, b` devolve uma tupla, que pode ser recebida direto em duas variáveis: `x, y = funcao()`. Se uma das partes não for usada, o nome começa com `_` (`publica, _privada = ...`).
+- **Escopo local:** uma variável criada dentro de uma função só existe ali, então duas rotas podem usar o mesmo nome de variável sem conflito.
 - **Middleware:** código que roda em toda requisição, antes e depois da rota, sem precisar mexer em cada rota.
 - **Código no topo do módulo:** roda uma vez só, no primeiro `import`. Bom lugar para guardar a hora de subida.
 - **Memória (RAM) vs disco:** o que está em variável some quando o programa para; o que está em arquivo continua.
-- **Schemas aninhados:** um modelo Pydantic pode ter outros modelos como campos (`disco: Disco`), formando um JSON em camadas. A classe usada como campo precisa estar definida **antes** do schema que usa ela.
-- **`response_model`:** o FastAPI só devolve os campos declarados no schema. Campo calculado na rota mas ausente do schema some da resposta sem dar erro.
-- **Variáveis de ambiente:** configuração que fica fora do código. Sempre chegam como texto, então número precisa de `int()`.
-- **Import circular:** quando dois arquivos importam um ao outro, o Python não consegue terminar de carregar nenhum dos dois. A saída é tirar o que os dois precisam para um terceiro arquivo (como o `config.py`).
-- **Uma fonte só para cada regra:** a contagem total fica numa função única, usada pela API e pelo painel. Duas cópias da mesma conta acabam divergindo quando uma muda e a outra não.
-- **Nome de arquivo × nome de variável:** depois de `from router import router`, o `router` no código é o objeto `APIRouter`, não o arquivo `router.py`. Uma função importada pelo nome é chamada direto, sem prefixo.
-- **507 Insufficient Storage:** status HTTP para "não há espaço para guardar isso".
+- **Schemas aninhados:** um modelo Pydantic pode ter outros modelos como campos (`disco: Disco`), formando um JSON em camadas.
 - **`GET` não empurra dados:** a rota só responde quando é chamada. Atualização periódica é responsabilidade de quem consome, e a tela do painel é esse consumidor.
 - **Arquivos estáticos:** HTML, JS e CSS entregues como estão, sem processamento. O `StaticFiles` serve uma pasta inteira a partir de um caminho.
 - **Ordem das rotas:** um mount em `/` aceita qualquer caminho, então precisa vir depois das rotas da API.
@@ -770,10 +681,6 @@ Dependências necessárias no `requirements.txt`: `pytest` e `httpx` (o `TestCli
 - **`setInterval`:** repete uma função a cada X **milissegundos**. Recebe a função **sem parênteses**, para chamá-la depois, em vez de chamá-la na hora.
 - **`try/catch`:** o `try/except` do JavaScript. O que fica depois de uma linha que falhou dentro do `try` não é executado.
 - **Separar fixo de variável:** no HTML, só o que muda ganha `id`. O rótulo e o valor ficam em elementos diferentes.
-- **Caminho com ponto no JS:** `dados.limite.usado` significa "entra em `dados`, depois em `limite`, depois pega `usado`". Valores irmãos (`usado` e `maximo`) são caminhos separados.
-- **Template string:** texto entre crases (`` ` ``) em que `${ }` encaixa o valor de uma variável.
-- **`classList.toggle(classe, condição)`:** coloca a classe quando a condição é verdadeira e tira quando é falsa. Como a tela atualiza a cada 10s, o estado é decidido de novo em toda atualização.
-- **f-string em várias linhas:** em vez de quebrar dentro das `{ }`, que só funciona a partir do Python 3.12, a mensagem é dividida em pedaços de string lado a lado dentro dos parênteses, cada um com o seu `f`, e o Python junta tudo.
 
 ---
 
@@ -796,13 +703,11 @@ Dependências necessárias no `requirements.txt`: `pytest` e `httpx` (o `TestCli
 
 - [x] `hsm.py`: sessão com o cofre e funções RSA (gerar, assinar, verificar)
 - [x] `hsm.py`: funções AES (`gerar_aes_no_cofre`, `cifrar_aes_no_cofre`, `decifrar_aes_no_cofre`)
-- [x] AES-GCM no cofre migrado para `GCMParams` (python-pkcs11 0.10.0)
 - [x] `GET /chaves/cofre/status`
 - [x] `GET /chaves/cofre/chaves`
 - [x] Rotas que usam o cofre para RSA (`/cofre/rsa`, `/cofre/assinar`, `/cofre/verificar`)
 - [x] Rotas que usam o cofre para AES (`/cofre/aes`, `/cofre/cifrar`, `/cofre/decifrar`)
 - [x] Testes do cofre em `tests/test_cripto.py` (7 testes) rodando
-- [ ] Testar cifrar e decifrar no cofre com `GCMParams`
 
 ### RF-08: monitoramento
 
@@ -825,22 +730,7 @@ Dependências necessárias no `requirements.txt`: `pytest` e `httpx` (o `TestCli
 - [x] Rotas da API continuando a funcionar
 - [x] `ruff check src/ tests/` limpo
 - [x] `pytest`: 11 passed sem Docker (os 7 do cofre dependem do container)
-- [x] CSS
-- [x] Tela abrindo pelo container (`Dockerfile` copiando a `screen/`)
-
-### RF-07: limite máximo de chaves
-
-- [x] `config.py` lendo `LIMITE_CHAVES` e `PIN` de variáveis de ambiente
-- [x] PIN fora do `hsm.py`
-- [x] `LIMITE_CHAVES` e `PIN` no `docker-compose.yml`
-- [x] `contar_total_geral()` somando arquivos + cofre
-- [x] `verificar_limite()` com `507` nas quatro rotas de criação
-- [x] Schema `Limite` e bloco `limite` no `/monitoramento`
-- [x] Card do limite na tela, com aviso vermelho acima do limite
-- [x] Decisões registradas
-- [ ] Testar criação de chaves até bater no limite
-- [ ] Testar o painel com o card do limite
-- [ ] Rodar `pytest` e `ruff` depois das mudanças
+- [ ] CSS
 
 ### Limitações conhecidas
 
@@ -848,12 +738,10 @@ Dependências necessárias no `requirements.txt`: `pytest` e `httpx` (o `TestCli
 - No **cofre** é diferente: gerar duas vezes com o mesmo nome **não sobrescreve**, cria uma segunda chave com o mesmo label. Depois disso, `assinar`, `verificar`, `cifrar` e `decifrar` com esse nome estouram `MultipleObjectsReturned` (`500`).
 - Pedir uma chave que não existe no cofre estoura `NoSuchKey` (`500`). O `except FileNotFoundError` da Parte 1 não serve aqui, porque no cofre não há arquivo.
 - Base64 malformado no `/verificar`, no `/decifrar` e nas rotas equivalentes do cofre retorna `500`.
-- Nonce ou cifrado adulterado no `/cofre/decifrar` não é tratado como `400`: o `decrypt` do cofre lança exceção e a rota devolve `500`.
-- O label do token continua fixo no `hsm.py`. O PIN já vem de variável de ambiente.
+- Nonce ou cifrado adulterado no `/cofre/decifrar` não é tratado como `400`.
+- O PIN e o label do token estão fixos no `hsm.py`. Como é um cofre de treino, tudo bem; num projeto real iriam para o `.env`.
 - **O cofre não roda sem Docker no Windows:** o `hsm.py` carrega o SoftHSM pelo caminho de Linux (`/usr/lib/softhsm/libsofthsm2.so`), que só existe dentro do container. Limitação de ambiente, não de código.
-- **O bloco `chave` do monitoramento conta só as chaves em arquivo** (Parte 1). As chaves do cofre entram só no `limite.usado`.
-- **A contagem do cofre usa a `listar_chaves_cofre()`, que filtra `PRIVATE_KEY`.** Chaves AES do cofre são `SECRET_KEY`, então ficam de fora do limite.
-- **Sem Docker, o limite não funciona:** a `contar_total_geral()` abre uma sessão com o cofre, que só existe dentro do container.
+- **O monitoramento conta só as chaves em arquivo** (Parte 1). As chaves do cofre ficam de fora, pelo mesmo motivo acima.
 - **Os contadores do monitoramento zeram** quando a API reinicia (ficam em memória).
 - **Os testes `test_gerar_chave_aumenta_total` e `test_gerar_chave_aumenta_espaco_disco` usam nomes fixos.** Na segunda rodada do pytest a chave já existe e é sobrescrita, então o total e o disco não aumentam e o teste falha. É preciso apagar `testeMonitoramento` e `testeEspacoDisco` da pasta `chaves/` antes de rodar de novo (ou usar `uuid`, como nos testes do cofre).
 - **A tela infla o contador de operações:** o middleware conta toda requisição, inclusive `/`, `/script.js`, `/style.css`, `/favicon.ico` e o `/monitoramento` a cada 10s. Deixar a tela aberta faz o número subir sozinho. Uma saída seria o middleware ignorar essas rotas.

@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 
+
 class Usuario(BaseModel):
     id: int = Field(description="ID do usuário")
     email: str 
@@ -47,7 +48,7 @@ class Tempo_no_ar(BaseModel):
 
 class Limite(BaseModel):
     maximo: int
-    usado: int 
+    usado: int | None
 
 class MonitoramentoResponse(BaseModel):
     disco: Disco
@@ -55,3 +56,4 @@ class MonitoramentoResponse(BaseModel):
     operacoes: Operacoes
     tempo: Tempo_no_ar
     limite: Limite
+    cofre_disponivel: bool

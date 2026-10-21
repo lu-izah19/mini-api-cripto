@@ -1,6 +1,8 @@
-from fastapi.testclient import TestClient
-from main import app
 import os
+
+from fastapi.testclient import TestClient
+
+from main import app
 
 client = TestClient(app)
 
@@ -12,6 +14,7 @@ def test_gerar_par_de_chaves_cria_os_dois_arquivos():
     assert os.path.exists("chaves/teste01_publica.pem")
 
 def test_assinar_verificar_mesmo_texto_devolve_verdadeiro():
+    client.post("chaves/rsa", json={"nome": "teste01"})
     teste_texto_assinado = client.post("chaves/assinar", json={"nome": "teste01", "texto": "teste_texto"})
     assinatura = teste_texto_assinado.json()["assinatura"]
     texto_verificado = client.post(
@@ -59,10 +62,10 @@ def test_decifrar_com_iv_errado_falha():
     client.post("chaves/aes", json={"nome": "teste05"})
     cifrado1 = client.post("chaves/cifrar", json={"nome": "teste05", "texto": "teste_texto"})
     teste_texto_cifrado1 = cifrado1.json()["cifrado"]
-    teste_nonce1 = cifrado1.json()["nonce"] 
+    _teste_nonce1 = cifrado1.json()["nonce"] 
 
     cifrado2 = client.post("chaves/cifrar", json={"nome": "teste05", "texto": "teste_texto"})
-    teste_texto_cifrado2 = cifrado2.json()["cifrado"]
+    _teste_texto_cifrado2 = cifrado2.json()["cifrado"]
     teste_nonce2 = cifrado2.json()["nonce"] 
 
     decifrado = client.post("chaves/decifrar", json={

@@ -7,7 +7,11 @@ async function buscarDados() {
     document.getElementById("disco").textContent = dados.disco.legivel;
     document.getElementById("operacoes").textContent = dados.operacoes.total;
     document.getElementById("tempoNoAr").textContent = dados.tempo.legivel;
-    document.getElementById("limite").textContent = `${dados.limite.usado} / ${dados.limite.maximo}`;
+    if (dados.cofre_disponivel) {
+      document.getElementById("limite").textContent = `${dados.limite.usado} / ${dados.limite.maximo}`;
+    } else {
+      document.getElementById("limite").textContent = "cofre indisponivel";
+    }
     document.getElementById("limite").classList.toggle("acima-do-limite", dados.limite.usado > dados.limite.maximo);
     document.getElementById("status").textContent = "conectado";
     document.getElementById("ultimaAtualizacao").textContent =

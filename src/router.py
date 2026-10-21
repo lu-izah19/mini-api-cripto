@@ -1,31 +1,54 @@
-from cryptography.exceptions import InvalidSignature, InvalidTag
-from fastapi import APIRouter, HTTPException
-from schemas import AssinarRequest, GerarChaveRequest, VerificarRequest, CifrarRequest, DecifrarRequest
-from cryptography.hazmat.primitives.asymmetric import rsa, padding
-from cryptography.hazmat.primitives import hashes, serialization
 import base64
 import os
+
+from cryptography.exceptions import InvalidSignature, InvalidTag
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from hsm import sessao_hsm, gerar_par_no_cofre, assinar_no_cofre, verificar_no_cofre
-from hsm import gerar_aes_no_cofre, cifrar_aes_no_cofre, decifrar_aes_no_cofre
-from pkcs11 import Attribute, ObjectClass
+from fastapi import APIRouter, HTTPException
+
 from config import LIMITE_CHAVES
+from hsm import (
+    CofreIndisponivel,
+    assinar_no_cofre,
+    cifrar_aes_no_cofre,
+    decifrar_aes_no_cofre,
+    gerar_aes_no_cofre,
+    gerar_par_no_cofre,
+    listar_chaves_no_cofre,
+    sessao_hsm,
+    verificar_no_cofre,
+)
 from metricas import contar_chaves
+from schemas import (
+    AssinarRequest,
+    CifrarRequest,
+    DecifrarRequest,
+    GerarChaveRequest,
+    VerificarRequest,
+)
 
 router = APIRouter(prefix="/chaves", tags=["chaves"])
 os.makedirs("chaves", exist_ok=True)
 
 def contar_total_geral():
     total, _rsa, _aes = contar_chaves()
-    quantiade = len(listar_chaves_cofre())
+    quantiade = len(listar_chaves_no_cofre())
     numero_de_chaves = total + quantiade
     return numero_de_chaves
 
 def verificar_limite():
-    numero_de_chaves =  contar_total_geral()
+    try:
+        numero_de_chaves = contar_total_geral()
+    except CofreIndisponivel:
+        raise HTTPException(
+            status_code=503,
+            detail="Cofre indisponível. " \
+            "Não é possível verificar o limite de chaves, por isso a criação foi recusada.",
+        )
     if numero_de_chaves >= LIMITE_CHAVES:
         raise HTTPException(
-            status_code= 507,
+            status_code= 409,
             detail=f"Limite de {LIMITE_CHAVES} chaves atingido. "
             f"Existem {numero_de_chaves} chaves, por isso a criação foi recusada."
         )
@@ -127,11 +150,8 @@ def status_cofre():
 
 @router.get("/cofre/chaves")
 def listar_chaves_cofre(): 
-    with sessao_hsm() as sessao:
-        lista_de_chaves = []
-        for chave in sessao.get_objects({Attribute.CLASS: ObjectClass.PRIVATE_KEY}):
-            lista_de_chaves.append({"label": chave.label, "tipo": chave.key_type.name})
-        return lista_de_chaves
+    lista = listar_chaves_no_cofre()
+    return lista
 
 @router.post("/cofre/rsa")
 def gerar_par_RSA_no_cofre(dados: GerarChaveRequest):
@@ -144,7 +164,7 @@ def gerar_par_RSA_no_cofre(dados: GerarChaveRequest):
 def assinar_chave_no_cofre(dados: AssinarRequest):
     assinatura = assinar_no_cofre(dados.nome, dados.texto)
     texto_assinado_b64 = base64.b64encode(assinatura).decode("utf-8")
-    return {"texto_assinado": texto_assinado_b64}
+    return {"assinatura": texto_assinado_b64}
 
 @router.post("/cofre/verificar")
 def verificar_assinatura_no_cofre(dados: VerificarRequest):

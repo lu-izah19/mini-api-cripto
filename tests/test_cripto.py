@@ -1,10 +1,12 @@
-from fastapi.testclient import TestClient
-from main import app
-from hsm import sessao_hsm
-from pkcs11 import Attribute, ObjectClass
-import pytest 
-from pkcs11.exceptions import AttributeSensitive
 import uuid
+
+import pytest
+from fastapi.testclient import TestClient
+from pkcs11 import Attribute, ObjectClass
+from pkcs11.exceptions import AttributeSensitive
+
+from hsm import sessao_hsm
+from main import app
 
 client = TestClient(app)
 
@@ -39,7 +41,7 @@ def test_chave_privada_NÃO_pode_ser_lida_nem_exportada():
 def test_assinar_verificar_pelo_cofre_funciona():
     texto = "teste_txt_cofre"
     nome = f"teste_cofre_{uuid.uuid4().hex}"
-    client.post("chaves/cofre/rsa", json={"nome": nome}) 
+    client.post("chaves/cofre/rsa", json={"nome": nome})
     assinatura_cofre = client.post("chaves/cofre/assinar", json={"nome": nome, "texto": texto})
     verificacao_cofre = client.post("chaves/cofre/verificar", json={
         "nome": nome, "texto_assinado": texto, "assinatura_b64": assinatura_cofre.json()["assinatura"]

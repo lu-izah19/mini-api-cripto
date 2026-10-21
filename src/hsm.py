@@ -1,14 +1,18 @@
-from contextlib import contextmanager
 import os
+from contextlib import contextmanager
+
 import pkcs11
-from config import PIN
+from pkcs11 import Attribute, KeyType, Mechanism, ObjectClass
+from pkcs11.exceptions import PKCS11Error
 from pkcs11.mechanisms import GCMParams
-from pkcs11 import Attribute, KeyType, ObjectClass
-from pkcs11 import Mechanism
+
+from config import PIN
 
 CAMINHO_BIBLIOTECA = "/usr/lib/softhsm/libsofthsm2.so"
 LABEL_TOKEN = "cofre-treino"
 
+class CofreIndisponivel(Exception):
+    pass
 
 @contextmanager
 def sessao_hsm():
@@ -16,10 +20,13 @@ def sessao_hsm():
 
     O 'with' garante o fechamento mesmo se der erro no meio.
     """
-    lib = pkcs11.lib(CAMINHO_BIBLIOTECA)
-    token = lib.get_token(token_label=LABEL_TOKEN)
-
-    sessao = token.open(user_pin=PIN, rw=True)
+    try:
+        lib = pkcs11.lib(CAMINHO_BIBLIOTECA)
+        token = lib.get_token(token_label=LABEL_TOKEN)
+        sessao = token.open(user_pin=PIN, rw=True)
+    except PKCS11Error as erro:
+        raise CofreIndisponivel("Cofre indisponível") from erro
+    
     try:
         yield sessao
     finally:
@@ -95,7 +102,7 @@ def cifrar_aes_no_cofre(label: str, texto: str):
         )
         nonce = os.urandom(12)
         return chave_aes.encrypt(
-            texto.encode(), mechanism=Mechanism.AES_GCM, mechanism_param=GCMParams(nonce)
+            texto.encode(), mechanism=Mechanism.AES_GCM, mechanism_param=GCMParams(nonce),
         ), nonce
 
 def decifrar_aes_no_cofre(label: str, cifrado: bytes, nonce: bytes):
@@ -105,7 +112,14 @@ def decifrar_aes_no_cofre(label: str, cifrado: bytes, nonce: bytes):
             label=label,
         )
         return chave_aes.decrypt(
-            cifrado, mechanism=Mechanism.AES_GCM, mechanism_param=GCMParams(nonce)
+            cifrado, mechanism=Mechanism.AES_GCM, mechanism_param=GCMParams(nonce),
         ).decode()
-    
 
+
+def listar_chaves_no_cofre():
+    with sessao_hsm() as sessao:
+        lista_de_chaves = []
+        for classe in [ObjectClass.PRIVATE_KEY, ObjectClass.SECRET_KEY]:
+            for chave in sessao.get_objects({Attribute.CLASS: classe}):
+                lista_de_chaves.append({"label": chave.label, "tipo": chave.key_type.name})
+        return lista_de_chaves
