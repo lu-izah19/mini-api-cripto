@@ -129,3 +129,4 @@ def test_assinar_no_cofre_com_chave_inexistente_devolve_404():
 
     assert resposta.status_code == 404
     assert resposta.json()["detail"] == "Chave não encontrada no cofre. Gere a chave primeiro."
+ 

@@ -1,7 +1,6 @@
-import os
-
 from fastapi.testclient import TestClient
 
+import config
 from main import app
 
 client = TestClient(app)
@@ -10,8 +9,8 @@ client = TestClient(app)
 
 def test_gerar_par_de_chaves_cria_os_dois_arquivos():
     client.post("chaves/rsa", json={"nome": "teste01"})
-    assert os.path.exists("chaves/teste01_privada.pem")
-    assert os.path.exists("chaves/teste01_publica.pem")
+    assert (config.PASTA_CHAVES / "teste01_privada.pem").exists()
+    assert (config.PASTA_CHAVES / "teste01_publica.pem").exists()
 
 def test_assinar_verificar_mesmo_texto_devolve_verdadeiro():
     client.post("chaves/rsa", json={"nome": "teste01"})
@@ -75,3 +74,19 @@ def test_decifrar_com_iv_errado_falha():
     })
 
     assert decifrado.status_code == 400
+
+def test_limite(monkeypatch):
+    monkeypatch.setattr(config, "LIMITE_CHAVES", 3)
+    chave1 = client.post("chaves/rsa", json={"nome": "testeChave1"})
+    chave2 = client.post("chaves/aes", json={"nome": "testeChave2"})
+    chave3 = client.post("chaves/cofre/rsa", json={"nome": "testeChave3"})
+
+    assert chave1.status_code == 200
+    assert chave2.status_code == 200
+    assert chave3.status_code == 200
+
+    chave4 = client.post("chaves/cofre/aes", json={"nome": "testeChave4"})
+
+    assert chave4.status_code == 409
+    assert "Limite de 3 chaves atingido" in chave4.json()["detail"]
+

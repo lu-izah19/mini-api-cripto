@@ -1,10 +1,12 @@
-from pathlib import Path
-
 import pytest
 
+import config
 from hsm import sessao_hsm
 
-PASTA_CHAVES = Path("chaves")
+
+@pytest.fixture(autouse=True)
+def pasta_chaves_temporaria(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "PASTA_CHAVES", tmp_path)
 
 
 def faxina():
@@ -12,9 +14,6 @@ def faxina():
         objetos = list(sessao.get_objects())
         for obj in objetos:
             obj.destroy()
-    if PASTA_CHAVES.exists():
-        for arquivo in PASTA_CHAVES.glob("*"):
-            arquivo.unlink()
 
 @pytest.fixture(autouse=True)
 def limpar():

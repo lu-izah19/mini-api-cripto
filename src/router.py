@@ -7,7 +7,7 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from fastapi import APIRouter, HTTPException
 
-from config import LIMITE_CHAVES
+import config
 from hsm import (
     CofreIndisponivel,
     assinar_no_cofre,
@@ -29,7 +29,6 @@ from schemas import (
 )
 
 router = APIRouter(prefix="/chaves", tags=["chaves"])
-os.makedirs("chaves", exist_ok=True)
 
 def contar_total_geral():
     total, _rsa, _aes = contar_chaves()
@@ -46,11 +45,11 @@ def verificar_limite():
             detail="Cofre indisponível. " \
             "Não é possível verificar o limite de chaves, por isso a criação foi recusada.",
         )
-    if numero_de_chaves >= LIMITE_CHAVES:
+    if numero_de_chaves >= config.LIMITE_CHAVES:
         raise HTTPException(
-            status_code= 409,
-            detail=f"Limite de {LIMITE_CHAVES} chaves atingido. "
-            f"Existem {numero_de_chaves} chaves, por isso a criação foi recusada."
+            status_code=409,
+            detail=f"Limite de {config.LIMITE_CHAVES} chaves atingido. "
+            f"Existem {numero_de_chaves} chaves, por isso a criação foi recusada.",
         )
 
 # _______________Parte 1_____________________________
@@ -58,20 +57,21 @@ def verificar_limite():
 @router.post("/rsa")
 def gerar_par_de_chaves(dados: GerarChaveRequest):
     verificar_limite()
+    config.PASTA_CHAVES.mkdir(exist_ok=True)
     privada = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     publica = privada.public_key()
     privada_pem = privada.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
     publica_pem = publica.public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
-    with open(f"chaves/{dados.nome}_privada.pem", "wb") as privada_arquivo:
+    with open(config.PASTA_CHAVES / f"{dados.nome}_privada.pem", "wb") as privada_arquivo:
         privada_arquivo.write(privada_pem)
-    with open(f"chaves/{dados.nome}_publica.pem", "wb") as publica_arquivo:
+    with open(config.PASTA_CHAVES / f"{dados.nome}_publica.pem", "wb") as publica_arquivo:
         publica_arquivo.write(publica_pem)
     return {"message": "Par de chaves RSA gerado com sucesso"}
 
 @router.post("/assinar")
 def assinar(dados: AssinarRequest):
     try:
-        with open(f"chaves/{dados.nome}_privada.pem", "rb") as privada_arquivo: 
+        with open(config.PASTA_CHAVES / f"{dados.nome}_privada.pem", "rb") as privada_arquivo: 
             privada_pem = privada_arquivo.read()
         privada = serialization.load_pem_private_key(privada_pem, password=None)
         texto_bytes = dados.texto.encode("utf-8")
@@ -88,7 +88,7 @@ def assinar(dados: AssinarRequest):
 @router.post("/verificar")
 def verificar(dados: VerificarRequest):
     try:
-        with open(f"chaves/{dados.nome}_publica.pem", "rb") as publica_arquivo: 
+        with open(config.PASTA_CHAVES / f"{dados.nome}_publica.pem", "rb") as publica_arquivo: 
             publica_pem = publica_arquivo.read()
         publica = serialization.load_pem_public_key(publica_pem)
         texto_bytes = dados.texto_assinado.encode("utf-8")
@@ -104,15 +104,16 @@ def verificar(dados: VerificarRequest):
 @router.post("/aes")
 def gerar_chave_aes(dados: GerarChaveRequest):
     verificar_limite()
+    config.PASTA_CHAVES.mkdir(exist_ok=True)
     chave_aes = os.urandom(32) 
-    with open(f"chaves/{dados.nome}_aes.key", "wb") as chave_arquivo:
+    with open(config.PASTA_CHAVES / f"{dados.nome}_aes.key", "wb") as chave_arquivo:
         chave_arquivo.write(chave_aes)
     return {"message": "Chave AES gerada com sucesso"}
 
 @router.post("/cifrar")
 def cifrar(dados: CifrarRequest):
     try:
-        with open(f"chaves/{dados.nome}_aes.key", "rb") as chave_arquivo:
+        with open(config.PASTA_CHAVES / f"{dados.nome}_aes.key", "rb") as chave_arquivo:
             chave = chave_arquivo.read()
         nonce = os.urandom(12)
         aesgcm = AESGCM(chave)
@@ -126,7 +127,7 @@ def cifrar(dados: CifrarRequest):
 @router.post("/decifrar")
 def decifrar(dados: DecifrarRequest):
     try:
-        with open(f"chaves/{dados.nome}_aes.key", "rb") as chave_arquivo:
+        with open(config.PASTA_CHAVES / f"{dados.nome}_aes.key", "rb") as chave_arquivo:
             chave = chave_arquivo.read() 
         aesgcm = AESGCM(chave)
         textoCifrado = base64.b64decode(dados.texto_cifrado)

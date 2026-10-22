@@ -1,8 +1,8 @@
 from datetime import UTC, datetime
-from pathlib import Path
+
+import config
 
 inicio = datetime.now(UTC)
-PASTA_CHAVES = Path("chaves")
 
 def tempo_execucao():
     agora = datetime.now(UTC)
@@ -26,14 +26,14 @@ def registrar_operacao(caminho):
     operacoes_por_tipo[caminho] = operacoes_por_tipo.get(caminho, 0) + 1
 
 def contar_chaves():
-    rsa = len(list(PASTA_CHAVES.glob("*_privada.pem")))
-    aes = len(list(PASTA_CHAVES.glob("*_aes.key")))
+    rsa = len(list(config.PASTA_CHAVES.glob("*_privada.pem")))
+    aes = len(list(config.PASTA_CHAVES.glob("*_aes.key")))
     total = rsa + aes
     return total, rsa, aes
 
 def tamanho_em_bytes():
     total_bytes = 0 
-    for arquivo in PASTA_CHAVES.glob("*"):
+    for arquivo in config.PASTA_CHAVES.glob("*"):
         total_bytes += arquivo.stat().st_size 
 
     if(total_bytes < 1024):
