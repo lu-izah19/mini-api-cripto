@@ -79,3 +79,53 @@ def test_listar_chaves_devolve_as_que_foram_criadas():
     for chave in chaves_cofre.json():
         lista_chaves_cofre.append(chave["label"])
     assert nome in lista_chaves_cofre
+
+def test_verificar_no_cofre_com_chave_inexistente_devolve_404():
+    resposta = client.post(
+        "/chaves/cofre/verificar",
+        json={
+            "nome": "nao-existe",
+            "texto_assinado": "oi",
+            "assinatura_b64": "YWJj",
+        },
+    )
+
+    assert resposta.status_code == 404
+    assert resposta.json()["detail"] == "Chave não encontrada no cofre. Gere a chave primeiro."
+
+def test_cifrar_no_cofre_com_chave_inexistente_devolve_404():
+    resposta = client.post(
+        "/chaves/cofre/cifrar",
+        json={
+            "nome": "nao-existe",
+            "texto": "oi",
+        },
+    )
+
+    assert resposta.status_code == 404
+    assert resposta.json()["detail"] == "Chave não encontrada no cofre. Gere a chave primeiro."
+
+def test_decifrar_no_cofre_com_chave_inexistente_devolve_404():
+    resposta = client.post(
+        "/chaves/cofre/decifrar",
+        json={
+            "nome": "nao-existe",
+            "texto_cifrado": "YWJj",
+            "nonce": "YWJj",
+        },
+    )
+
+    assert resposta.status_code == 404
+    assert resposta.json()["detail"] == "Chave não encontrada no cofre. Gere a chave primeiro."
+
+def test_assinar_no_cofre_com_chave_inexistente_devolve_404():
+    resposta = client.post(
+        "/chaves/cofre/assinar",
+        json={
+            "nome": "nao-existe",
+            "texto": "oi",
+        },
+    )
+
+    assert resposta.status_code == 404
+    assert resposta.json()["detail"] == "Chave não encontrada no cofre. Gere a chave primeiro."

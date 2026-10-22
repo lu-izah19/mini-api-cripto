@@ -1,5 +1,7 @@
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pkcs11.exceptions import NoSuchKey
 
 import metricas
 from config import LIMITE_CHAVES
@@ -9,6 +11,14 @@ from schemas import Chave, Disco, Limite, MonitoramentoResponse, Operacoes, Temp
 
 app = FastAPI(title="Mini API de criptografia")
 app.include_router(router)
+
+
+@app.exception_handler(NoSuchKey)
+async def chave_nao_encontrada_no_cofre(request: Request, exc: NoSuchKey):
+    return JSONResponse(
+        status_code=404,
+        content={"detail": "Chave não encontrada no cofre. Gere a chave primeiro."},
+    )
 
 
 @app.get("/saude")
