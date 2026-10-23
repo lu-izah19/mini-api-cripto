@@ -1,6 +1,6 @@
 import base64
 import os
-
+import binascii
 from cryptography.exceptions import InvalidSignature, InvalidTag
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
@@ -29,6 +29,22 @@ from schemas import (
 )
 
 router = APIRouter(prefix="/chaves", tags=["chaves"])
+
+def decodificar_base64(valor: str) -> bytes:
+    try:
+        dados = base64.b64decode(valor, validate=True)
+    except binascii.Error:
+        raise HTTPException(
+            status_code=422,
+            detail="Dado inválido.",
+        )
+    if not dados:
+        raise HTTPException(
+            status_code=422,
+            detail="Dado inválido.",
+        )
+    return dados
+
 
 def contar_total_geral():
     total, _rsa, _aes = contar_chaves()
@@ -92,7 +108,7 @@ def verificar(dados: VerificarRequest):
             publica_pem = publica_arquivo.read()
         publica = serialization.load_pem_public_key(publica_pem)
         texto_bytes = dados.texto_assinado.encode("utf-8")
-        publica.verify(base64.b64decode(dados.assinatura_b64), texto_bytes, padding.PSS( 
+        publica.verify(decodificar_base64(dados.assinatura_b64), texto_bytes, padding.PSS( 
         mgf=padding.MGF1(hashes.SHA256()), 
         salt_length=padding.PSS.MAX_LENGTH), hashes.SHA256())
         return {"valida": True}
@@ -130,8 +146,8 @@ def decifrar(dados: DecifrarRequest):
         with open(config.PASTA_CHAVES / f"{dados.nome}_aes.key", "rb") as chave_arquivo:
             chave = chave_arquivo.read() 
         aesgcm = AESGCM(chave)
-        textoCifrado = base64.b64decode(dados.texto_cifrado)
-        nonce = base64.b64decode(dados.nonce)
+        textoCifrado = decodificar_base64(dados.texto_cifrado)
+        nonce = decodificar_base64(dados.nonce)
         decifrado = aesgcm.decrypt(nonce, textoCifrado, None)
         return {"texto": decifrado.decode("utf-8")}
     except FileNotFoundError:
@@ -169,7 +185,7 @@ def assinar_chave_no_cofre(dados: AssinarRequest):
 
 @router.post("/cofre/verificar")
 def verificar_assinatura_no_cofre(dados: VerificarRequest):
-        cofre_verificado = verificar_no_cofre(dados.nome, dados.texto_assinado, base64.b64decode(dados.assinatura_b64))
+        cofre_verificado = verificar_no_cofre(dados.nome, dados.texto_assinado, decodificar_base64(dados.assinatura_b64))
         return {"valida": cofre_verificado}     
 
 @router.post("/cofre/aes")
@@ -190,6 +206,6 @@ def cifrar_no_cofre(dados: CifrarRequest):
 @router.post("/cofre/decifrar")
 def decifrar_no_cofre(dados: DecifrarRequest):
     texto_decifrado_cofre = decifrar_aes_no_cofre(
-        dados.nome, base64.b64decode(dados.texto_cifrado), base64.b64decode(dados.nonce)
+        dados.nome, decodificar_base64(dados.texto_cifrado), decodificar_base64(dados.nonce)
     )
     return {"texto": texto_decifrado_cofre}
